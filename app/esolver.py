@@ -71,6 +71,9 @@ def _data(v) -> str:
     return "" if v[:4] in ("0001", "1900") else v
 
 
+STATO_IMPEGNO = {0: "Da confermare", 1: "Confermato", 2: "Prenotato", 3: "Previsionale", 4: "Annullato"}
+
+
 def map_riga(r: dict) -> dict:
     q = float(r.get("Quantita") or 0)
     saldata = bool(r.get("RigaSaldata"))
@@ -85,7 +88,13 @@ def map_riga(r: dict) -> dict:
         "variante": r.get("VarianteArt") or "",
         "descrizione": r.get("DesArt") or "",
         "data_consegna": _data(r.get("DataConsegnaConf")) or _data(r.get("DataConsegnaRich")),
+        "data_consegna_conf": _data(r.get("DataConsegnaConf")),
         "data_spedizione": _data(r.get("DataSpedizione")),
+        # le righe di commento non hanno articolo né impegno
+        "stato_impegno": STATO_IMPEGNO.get(r.get("StatoFlussoAtteso") or 0, "") if r.get("CodArt") else "",
+        "rif_commessa": r.get("RiferimentoCommessa") or "",
+        "magazzino": r.get("CodMagPrincipale") or "",
+        "listino": r.get("CodListino") or "",
         "udm": r.get("UnitaMisura") or "",
         "quantita": q,
         "qta_in_spedizione": 0.0,
@@ -207,8 +216,14 @@ class SnapshotRepository:
     def dettaglio(self, oid: int) -> Optional[dict]:
         raise EsolverError("Il dettaglio dell'ordine non è disponibile con i dati dello snapshot")
 
+    def riga(self, oid: int, id_riga: int) -> Optional[dict]:
+        raise EsolverError("Il dettaglio della riga non è disponibile con i dati dello snapshot")
+
     def righe_ordine(self, oid: int) -> Optional[list[dict]]:
         return self._righe.get(oid)
+
+    def dimentica(self, oid: int):
+        pass  # fotografia: non c'è nulla da rileggere
 
 
 class EsolverRest:
@@ -299,7 +314,9 @@ class EsolverRepository:
     def _azzera(self):
         self._cache_righe: dict[int, list[dict]] = {}
         self._cache_ordini: dict[int, dict] = {}
-        self._cache_testate: dict[int, dict] = {}  # documenti grezzi senza le righe
+        self._cache_testate: dict[int, dict] = {}  # documenti grezzi
+        self._cache_docven: dict[int, dict[int, dict]] = {}  # righe del report per ordine
+        self._cache_articoli: dict[str, dict] = {}
         self._con_quantita: set[int] = set()
 
     def _chiama(self, payload: dict) -> list[dict]:
@@ -370,7 +387,8 @@ class EsolverRepository:
         o = map_ordine(raw)
         self._con_quantita.discard(o["id"])
         self._cache_ordini[o["id"]] = o
-        self._cache_testate[o["id"]] = {k: v for k, v in raw.items() if k != "Righe"}
+        self._cache_testate[o["id"]] = raw
+        self._cache_docven.pop(o["id"], None)
         self._cache_righe[o["id"]] = [map_riga(r) for r in raw.get("Righe") or []]
         return o
 
@@ -378,6 +396,12 @@ class EsolverRepository:
         if oid not in self._cache_ordini:
             self._carica(oid)
         return self._cache_ordini.get(oid)
+
+    def dimentica(self, oid: int):
+        """Toglie l'ordine dalla cache: alla prossima richiesta viene riletto da eSolver."""
+        for cache in (self._cache_righe, self._cache_ordini, self._cache_testate, self._cache_docven):
+            cache.pop(oid, None)
+        self._con_quantita.discard(oid)
 
     def dettaglio(self, oid: int) -> Optional[dict]:
         """Dati delle schede dell'ordine, con le descrizioni e gli eventuali avvisi."""
@@ -389,6 +413,37 @@ class EsolverRepository:
             return None
         descrizioni, avvisi = leggi_descrizioni(raw, self._righe_report)
         return {**map_dettaglio(raw, descrizioni), "avvisi": avvisi}
+
+    def riga(self, oid: int, id_riga: int) -> Optional[dict]:
+        """Dati della singola riga, con le descrizioni e gli eventuali avvisi."""
+        from .dettaglio import map_dettaglio_riga
+        if oid not in self._cache_testate:
+            self._carica(oid)
+        raw, ordine = self._cache_testate.get(oid), self._cache_ordini.get(oid)
+        r = next((x for x in (raw or {}).get("Righe") or [] if x.get("IdRigaDoc") == id_riga), None)
+        if r is None or ordine is None:
+            return None
+        avvisi = []
+
+        def descrizione(cosa, leggi):
+            try:
+                return leggi()
+            except EsolverError as e:
+                if e.status == 503:  # accesso mancante: va segnalato
+                    raise
+                log.warning("Dettaglio riga, %s non disponibile: %s", cosa, e)
+                avvisi.append(cosa)
+                return {}
+        docven = descrizione("tipo riga e nome del magazzino", lambda: self._quantita(ordine)).get(id_riga, {})
+        articolo = descrizione("UdM magazzino", lambda: self._articolo(r["CodArt"])) if r.get("CodArt") else {}
+        return {**map_dettaglio_riga(raw, r, docven, articolo), "avvisi": avvisi}
+
+    def _articolo(self, codice: str) -> dict:
+        cache = self._cache_articoli
+        if codice not in cache:
+            righe = self._righe_report("ARTELENCO_MCP", [{"Name": "CodArt", "Operators": 11, "Values": [codice]}])
+            cache[codice] = next((x for x in righe if x.get("CodArt") == codice), {})
+        return cache[codice]
 
     def righe_ordine(self, oid: int) -> Optional[list[dict]]:
         if oid not in self._cache_righe:
@@ -411,13 +466,17 @@ class EsolverRepository:
 
     def _quantita(self, o: dict) -> dict[int, dict]:
         """Righe DOCVEN dell'ordine. Il report non filtra per IdDocumento: si usano cliente e data."""
+        cache = self._cache_docven
+        if o["id"] in cache:
+            return cache[o["id"]]
         giorno = date.fromisoformat(o["data_reg"]).strftime("%d%m%Y")
         righe = self._righe_report(DOCVEN, [
             {"Name": "TipoMovimento", "Operators": 11, "Values": [TIPO_MOVIMENTO_ORDINE]},
             {"Name": "CliForCod", "Operators": 11, "Values": [o["cod_cliente"]]},
             {"Name": "DataRegistraz", "Operators": 3, "Values": [giorno, giorno]},
         ])
-        return {r["IdRigaDoc"]: r for r in righe if r.get("IdDocumento") == o["id"]}
+        cache[o["id"]] = {r["IdRigaDoc"]: r for r in righe if r.get("IdDocumento") == o["id"]}
+        return cache[o["id"]]
 
     def _carica(self, oid: int):
         for raw in self._chiama({"ElencoIdDocumento": str(oid)}):

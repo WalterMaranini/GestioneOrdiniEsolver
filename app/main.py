@@ -91,10 +91,20 @@ def schede_ordine(oid: int):
 
 
 @app.get("/api/ordini/{oid}/righe")
-def righe_ordine(oid: int):
+def righe_ordine(oid: int, aggiorna: bool = False):
+    if aggiorna:
+        repo.dimentica(oid)
     r = repo.righe_ordine(oid)
     if r is None:
         raise HTTPException(404, "Ordine non trovato")
+    return r
+
+
+@app.get("/api/ordini/{oid}/righe/{id_riga}")
+def riga_ordine(oid: int, id_riga: int):
+    r = repo.riga(oid, id_riga)
+    if r is None:
+        raise HTTPException(404, "Riga non trovata")
     return r
 
 

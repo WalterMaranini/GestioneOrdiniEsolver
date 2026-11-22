@@ -1,5 +1,5 @@
 """
-Dettaglio del singolo ordine: dati delle schede Generali, Condizioni e Logistica.
+Dettaglio del singolo ordine (schede Generali, Condizioni e Logistica) e della singola riga (scheda Generali).
 
 La testata viene da LeggiElenco, che riporta soprattutto codici. Le descrizioni vengono dai report REST di
 sola lettura elencati qui sotto. Ciò che nessun servizio espone resta vuoto: non si ricava per ipotesi.
@@ -11,7 +11,7 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 from typing import Callable
 
-from .esolver import DOCVEN, EsolverError, _data
+from .esolver import DOCVEN, EsolverError, _data, map_riga
 
 log = logging.getLogger(__name__)
 
@@ -200,4 +200,50 @@ def map_dettaglio(raw: dict, d: dict[str, list[dict]]) -> dict:
             "giro": v("CodGiroConsegne"), "sequenza": raw.get("OrdineNelGiro") or 0,
         },
         "vettori": [vettore(1), vettore(2)],
+    }
+
+
+def map_dettaglio_riga(raw: dict, r: dict, docven: dict, articolo: dict) -> dict:
+    """Campi della riga r dell'ordine raw; docven e articolo sono le righe dei report, o vuoti."""
+    def v(campo):
+        return _testo(r.get(campo))
+
+    base = map_riga(r)
+    magazzino = v("CodMagPrincipale")
+    # il nome vale solo se il report parla dello stesso magazzino
+    des_magazzino = docven.get("DesMagazzino") if _testo(docven.get("CodMagazzino")) == magazzino else ""
+    return {
+        "id_riga": r.get("IdRigaDoc"), "n": r.get("NumProgrRiga"), "tipo_riga": r.get("TipoRiga"),
+        "des_tipo": _testo(docven.get("DesTipoRiga")), "codice": v("CodArt"), "descrizione": v("DesArt"),
+        "generali": {
+            "articolo": _voce(v("CodArt"), v("DesArt")) if v("CodArt") else "", "variante": v("VarianteArt"),
+            "descrizione": v("DesArt"),
+            "variabili": [r.get(f"Qta{n}VarCalcolo") or 0 for n in ("Prima", "Seconda", "Terza", "Quarta")],
+            "udm_imputare": v("UdmDaImputare"), "qta_imputare": r.get("QtaDaImputare"),
+            "unita_collo": r.get("NumUnitaPerCollo"),
+            "udm": v("UnitaMisura"), "quantita": r.get("Quantita"),
+            "udm_mag": _testo(articolo.get("MagUm")), "qta_mag": r.get("QtaUmMag"), "qta_sec": r.get("QtaUmSecondaria"),
+        },
+        "condizioni": {
+            "listino": _voce(v("TipoListino"), v("CodListino")), "politica_sconti": v("CodPoliticaSconti"),
+            "prezzo": r.get("Prezzo"),
+            "sconti": [r.get(k) or 0 for k in ("PercSconto1", "PercSconto2", "PercSconto3", "PercSconto4",
+                                               "PercSconto5", "Sconto6")],
+            "sconto_unitario": r.get("ScontoUnitario") or 0,
+            "valuta": _testo(raw.get("CodValuta")), "importo": r.get("ImportoValuta"),
+            # RigaDaStp non si usa: il servizio restituisce sempre 0, anche se in eSolver è attivo
+            "rilevante_spese": bool(r.get("ConsidImpCalcSpese")),
+        },
+        "consegna": {
+            "data_richiesta": _data(r.get("DataConsegnaRich")), "data_confermata": base["data_consegna_conf"],
+            "data_spedizione": base["data_spedizione"], "stato_impegno": base["stato_impegno"],
+            "rif_commessa": base["rif_commessa"], "lotto": v("RifLottoAlfanum"),
+            "lotto_data": _data(r.get("RifLottoData")), "lotto_numero": r.get("RifLottoNumero") or 0,
+            "riferimento": v("RiferimentoRiga"),
+            "magazzino": _voce(magazzino, des_magazzino) if magazzino else "", "area": v("CodAreaMagPrinc"),
+            "nota": v("NotaInterna"), "blocca_evasione": bool(r.get("BloccaEvasione")),
+            "sollecitata": bool(r.get("RigaSollecitata")), "saldata": bool(r.get("RigaSaldata")),
+        },
+        "pesi": {"lordo": r.get("PesoLordoUnitario"), "tara": r.get("TaraUnitaria"),
+                 "netto": r.get("PesoNetto"), "volume": r.get("Volume")},
     }

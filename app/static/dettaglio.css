@@ -1,17 +1,20 @@
-/* dettaglio ordine: riproduce le schede Generali, Condizioni e Logistica */
-#dett{display:none;flex:1;flex-direction:column;min-height:0;background:#e7e7e7;font-family:Verdana,"DejaVu Sans","Segoe UI",sans-serif}
+/* dettaglio ordine e dettaglio riga */
+.d-fin{display:none;flex:1;flex-direction:column;min-height:0;background:#e7e7e7;font-family:Verdana,"DejaVu Sans","Segoe UI",sans-serif}
 body.in-dettaglio #dett{display:flex}
 body.in-dettaglio .solo-elenco{display:none}
+body.in-riga #dett{display:none}
+body.in-riga #driga{display:flex}
 
 /* linguette e ribbon */
-#dett .menutabs{height:28px;background:var(--blu);border-bottom:2px solid transparent;font-family:"Segoe UI",Tahoma,Arial,sans-serif}
-#dett .menutabs.ctx{border-bottom-color:#00b0f0}
-#dett .menutabs .tab{cursor:pointer;padding:5px 14px 6px}
-#dett .menutabs .tab.sel{background:#e7e7e7;color:#2b3e6b;border:none}
-#dett .menutabs .tab.contesto{border:2px solid #00b0f0;border-bottom:none;padding:3px 13px 6px}
-#dett .ribbon{background:#e7e7e7;border-bottom:1px solid #d0d0d0;font-family:"Segoe UI",Tahoma,Arial,sans-serif}
-#dett .rgroup{border-right-color:#d2d2d2}
-#dett .ribbon[hidden]{display:none}
+.d-fin .menutabs{height:28px;background:var(--blu);border-bottom:2px solid transparent;font-family:"Segoe UI",Tahoma,Arial,sans-serif}
+.d-fin .menutabs.ctx{border-bottom-color:#00b0f0}
+.d-fin .menutabs .tab{cursor:pointer;padding:5px 14px 6px}
+.d-fin .menutabs .tab.sel{background:#e7e7e7;color:#2b3e6b;border:none}
+.d-fin .menutabs .d-ctx{display:flex;align-items:flex-end}
+.d-fin .menutabs .tab.contesto.sel{border:2px solid #00b0f0;border-bottom:none;padding:3px 13px 6px}
+.d-fin .ribbon{background:#e7e7e7;border-bottom:1px solid #d0d0d0;font-family:"Segoe UI",Tahoma,Arial,sans-serif}
+.d-fin .rgroup{border-right-color:#d2d2d2}
+.d-nd{padding:14px;color:#777;font-size:12px}
 
 /* titolo */
 .d-titolo{font-size:18px;font-weight:700;padding:7px 5px 0;flex:none}
@@ -52,12 +55,28 @@ body.in-dettaglio .solo-elenco{display:none}
 .d-v.data::after{content:"";position:absolute;right:2px;top:4px;width:11px;height:12px;border:1px solid #7a9cc6;border-top:4px solid #f0a83c;background:#fff}
 .d-sw{width:36px;height:17px;border-radius:9px;background:#9b9b9b;position:relative;margin:2px 1px}
 .d-sw::after{content:"";position:absolute;width:15px;height:15px;border-radius:50%;background:#f4f4f4;top:1px;left:1px}
+.d-sw.nd{background:#e2e2e2}
+.d-sw.nd::after{left:10px;background:#f8f8f8}
 .d-sw.on{background:#3f6fb5}
 .d-sw.on::after{left:20px}
 
-.d-vuota{padding:30px;color:#666;font-size:13px;background:#f0f0f0;border:1px solid #bdbdbd}
-.d-righe{flex:1;min-height:0;background:#fff;border:1px solid #bdbdbd;display:flex;flex-direction:column;font-family:"Segoe UI",Tahoma,Arial,sans-serif}
-.d-righe .cnt{font-size:11px;padding:3px 6px;border-bottom:1px solid var(--bordo2);text-align:right}
+/* dettaglio riga */
+#driga .d-menu{width:131px}
+.d-v.obb{border-bottom-color:#3a8ee6}
+.d-v.d-testo{height:43px;line-height:16px;white-space:pre-wrap;overflow-y:scroll;text-overflow:clip;padding-top:2px}
+.d-b{flex:none;width:16px;height:23px;line-height:20px;border:1px solid #c4c4c4;background:#f6f6f6;text-align:center;font-size:12px;color:#555}
 
-@media (max-width:900px){ .d-cols{grid-template-columns:minmax(0,1fr)} #dett .ribbon{overflow-x:auto} }
-@media print{ body.in-dettaglio #dett .menutabs,body.in-dettaglio #dett .ribbon,.d-menu{display:none} .d-scheda{overflow:visible} }
+.d-vuota{padding:30px;color:#666;font-size:13px;background:#f0f0f0;border:1px solid #bdbdbd}
+.d-righe{flex:1;min-height:0;background:#f0f0f0;border:1px solid #bdbdbd;display:flex;flex-direction:column}
+.d-righe .gtool{background:#e7e7e7;border-bottom:1px solid #bdbdbd}
+.d-righe .gwrap{--fs:12px;background:#f0f0f0}
+.d-righe table.grid{background:#fff}
+.d-righe table.grid th,.d-righe table.grid td{border-color:#c0c0c0}
+.d-righe table.grid thead tr.h1 th{height:40px;white-space:normal;line-height:13px;font-size:12px;text-align:center;padding:0 13px 0 4px;border-color:#b5b5b5}
+.d-righe table.grid thead th .arr{position:absolute;right:2px;top:13px;float:none;border-left:none}
+.d-righe table.grid tbody tr.cur td{background:#fff}
+.d-righe table.grid tfoot td{position:sticky;bottom:0;background:#e7e7e7;border-top:1px solid #b5b5b5;font-weight:700;z-index:1}
+.d-righe table.grid tfoot td:first-child{overflow:visible;z-index:2}
+
+@media (max-width:900px){ .d-cols{grid-template-columns:minmax(0,1fr)} .d-fin .ribbon{overflow-x:auto} }
+@media print{ body.in-dettaglio .d-fin .menutabs,body.in-dettaglio .d-fin .ribbon,.d-menu{display:none} .d-scheda{overflow:visible} }

@@ -6,10 +6,11 @@ window.Dettaglio = (() => {
   const casella = (v, tipo='', off=false) => `<div class="d-v ${tipo} ${off?'off':''}" title="${esc(v)}">${esc(v)}</div>`;
   const riga = (etichetta, contenuto, cls='') => `<div class="d-r"><label class="${cls}">${esc(etichetta)}</label><div class="d-f">${contenuto}</div></div>`;
   const campo = (etichetta, v, tipo='', off=false) => riga(etichetta, casella(v, tipo, off), off?'off':'');
-  const interruttore = (etichetta, on, cls='') => riga(etichetta, `<div class="d-sw ${on?'on':''}" role="img" aria-label="${on?'Sì':'No'}"></div>`, cls);
+  // on null = dato non disponibile
+  const interruttore = (etichetta, on, cls='') => riga(etichetta, `<div class="d-sw ${on==null?'nd':on?'on':''}" role="img" aria-label="${on==null?'Non disponibile':on?'Sì':'No'}" ${on==null?'title="Non disponibile"':''}></div>`, cls);
   const num = (v, dec=2) => fmtNum(v, dec);
-  const sezione = (titolo, sx, dx, {chiudibile=false, piu=false}={}) =>
-    `<section class="d-sez"><h3><span>${esc(titolo)}</span>${piu?'<a data-fare="Mostra di più">Mostra di più</a>':''}${chiudibile?'<button data-chiudi aria-label="Riduci o espandi">⌃</button>':''}</h3>
+  const sezione = (titolo, sx, dx, {chiudibile=false, piu=''}={}) =>
+    `<section class="d-sez"><h3><span>${esc(titolo)}</span>${piu?`<a data-fare="${piu}">${piu}</a>`:''}${chiudibile?'<button data-chiudi aria-label="Riduci o espandi">⌃</button>':''}</h3>
      <div class="d-cols"><div>${sx}</div><div>${dx}</div></div></section>`;
   const titoletto = t => `<h4>${esc(t)}</h4>`;
   const luogo = (o, tipoProv='', tipoStato='sel') => casella(o.provincia, tipoProv) + casella(o.cap) + casella(o.stato, tipoStato);
@@ -24,7 +25,7 @@ window.Dettaglio = (() => {
         riga('', luogo(i)) + campo('Frazione', i.frazione) + campo('Partita IVA', i.partita_iva) + campo('Codice fiscale', i.codice_fiscale),
         titoletto('Luogo di consegna') + campo('Codice indirizzo', c.codice, 'sel') + campo('Ragione sociale', c.ragione_sociale) + campo('Indirizzo', c.indirizzo) +
         campo('', c.indirizzo2) + campo('Comune', c.comune, 'sel') + riga('', luogo(c)) + riga('Frazione', casella(c.frazione) + casella('')) + interruttore('Intestatario DDT', false, 'off'),
-        {chiudibile:true, piu:true}) +
+        {chiudibile:true, piu:'Mostra di più'}) +
       sezione('Agenti', agente('Titolare', d.agenti[0]), agente('Secondario', d.agenti[1]), {chiudibile:true}) +
       sezione('Altri dati',
         campo('Rif. commessa', '', 'sel') + campo('Data consegna', data(a.data_consegna), 'num data') + campo('Divisione', a.divisione, 'sel') +
@@ -75,7 +76,8 @@ window.Dettaglio = (() => {
   const ico = id => `<svg><use href="#${id}"/></svg>`;
   // grande(icona, testo, azione); azione vuota = disattivato come nella maschera
   const grande = (id, testo, azione) => `<div class="rbig ${azione?'':'dis'}" ${azione?`data-fare="${esc(azione)}"`:''}>${ico(id)}${testo}</div>`;
-  const piccolo = (id, testo, azione) => `<div class="rsmall" data-fare="${esc(azione)}">${ico(id)}${testo}</div>`;
+  const piccolo = (id, testo, azione) => `<div class="rsmall ${azione?'':'dis'}" ${azione?`data-fare="${esc(azione)}"`:''}>${ico(id)}${testo}</div>`;
+  const colonna = (...voci) => `<div class="rcol">${voci.join('')}</div>`;
   const gruppo = (nome, corpo) => `<div class="rgroup"><div class="rbody">${corpo}</div><div class="rlabel">${nome}</div></div>`;
   const RIBBON = {
     azioni: gruppo('Navigazione', grande('d-esci','Abbandona<br>(F1)','abbandona')) +
@@ -90,40 +92,79 @@ window.Dettaglio = (() => {
       gruppo('Archiviazione', grande('i-archive','Documenti<br>archiviati','Documenti archiviati')),
     condizioni: gruppo('Altri dati', grande('i-doc','Dettaglio<br>IBAN (F7)')) + gruppo('Altre funzioni', grande('i-refresh','Riapplica<br>condizioni (C)')),
     logistica: gruppo('Gestione', grande('d-camion','Altri Indirizzi<br>Vettore 1 (A)') + grande('d-camion','Altri Indirizzi<br>Vettore 2 (L)')),
+    righe: gruppo('Nuovo', grande('d-piu','Aggiungi<br>(F4)') +
+        colonna(piccolo('d-piu','Inserisci'), piccolo('i-dup','Duplica (Q)'), piccolo('i-dup','Copia ▾','Copia')) +
+        colonna(piccolo('i-grid','Caricamento multiplo'), piccolo('i-check','Caricamento da elenco'))) +
+      gruppo('Gestione', grande('d-lente','Dettaglio<br>(F7)','Dettaglio riga') + grande('d-elimina','Elimina<br>(F8)') +
+        colonna(piccolo('d-forbici','Taglia riga'), piccolo('i-dup','Incolla Righe'), piccolo('d-elimina','Annulla taglia')) +
+        colonna(piccolo('i-refresh','Ricalcolo subtotali'), piccolo('d-lente','Modifica tipo ricerca articolo'), piccolo('i-refresh','Variazione automatica righe (F3)'))) +
+      gruppo('Terminalini', colonna(piccolo('i-flow','Caricamento/evasione righe con rif.ordine'), piccolo('i-flow','Evasione progressiva righe ordine'))) +
+      gruppo('Evasione', colonna(piccolo('i-doc','Preventivi'), piccolo('i-doc','Ordini quadro'))) +
+      gruppo('Avanzamento', colonna(piccolo('i-grid','Situazione riga ordine','Situazione riga ordine'), piccolo('i-link','Legami','Legami'))) +
+      gruppo('Altre funzioni', colonna(piccolo('d-lente','Controllo marginalità'), piccolo('i-grid','Aggiorna dati proposti (F11)'), piccolo('i-chart','Collegamento a OdP tramite barcode')) +
+        colonna(piccolo('i-archive','Assegna lotto minimo'), piccolo('d-lente','Controllo giacenza ▾','Controllo giacenza'))),
+    interrogazioni: '<div class="d-nd">Voci non ancora disponibili</div>',
   };
+  // linguette che si aggiungono ad AZIONI nelle varie schede
+  const CONTESTO = {condizioni:['condizioni'], logistica:['logistica'], righe:['righe','interrogazioni']};
+
+  /* ---------------- righe ---------------- */
+  // quantità senza decimali superflui, come nella maschera
+  const quantita = v => v==null || v==='' ? '' : Number(v).toLocaleString('it-IT', {maximumFractionDigits:5, useGrouping:false});
+  const colonneRighe = valuta => [
+    {type:'ind', w:18},
+    {key:'stato_evasione', label:'E', w:48, cls:'c', render:v=>`<span class="stato ${v}" title="${v}"></span>`, fmt:v=>v},
+    {key:'n', label:'Nr. riga', w:47, cls:'r', fmt:v=>fmtNum(v)},
+    {key:'tipo_riga', label:'Tipo riga', w:47, cls:'r'},
+    {key:'codice', label:'Codice', w:159},
+    {key:'variante', label:'Variante', w:79},
+    {key:'descrizione', label:'Descrizione', w:199},
+    {key:'udm', label:'UdM', w:119},
+    {key:'quantita', label:'Quantità', w:119, cls:'r', fmt:quantita},
+    {key:'data_consegna_conf', label:'Data consegna confermata', w:95, cls:'r', fmt:fmtDate},
+    {key:'data_spedizione', label:'Data spedizione', w:95, cls:'r', fmt:fmtDate},
+    {key:'stato_impegno', label:'Stato impegno', w:111},
+    {key:'rif_commessa', label:'Rif. Commessa', w:119},
+    {key:'magazzino', label:'Mag. principale', w:79},
+    {key:'listino', label:'Codice listino', w:79},
+    {key:'prezzo', label:`Prezzo ${valuta}`.trim(), w:87, cls:'r', fmt:v=>fmtNum(v,4)},
+  ];
 
   /* ---------------- struttura ---------------- */
+  const menuHtml = voci => voci.map(([k,t]) => `<button data-scheda="${k}">${esc(t)}</button>`).join('');
+  const marcaMenu = (el, k) => el.querySelectorAll('.d-menu button').forEach(b => { b.classList.toggle('sel', b.dataset.scheda===k); if (b.dataset.scheda===k) b.setAttribute('aria-current','page'); else b.removeAttribute('aria-current'); });
   const root = document.getElementById('dett');
+  root.classList.add('d-fin');
   root.innerHTML = `<svg width="0" height="0" style="position:absolute"><defs>
     <symbol id="d-esci" viewBox="0 0 32 32"><path d="M14 4h14v24H14z" fill="#f2c069" stroke="#c79436"/><path d="M18 16H4M9 10l-6 6 6 6" fill="none" stroke="#3a6fb5" stroke-width="3"/></symbol>
     <symbol id="d-matita" viewBox="0 0 32 32"><path d="M5 3h12l6 6v20H5z" fill="#fff" stroke="#6b6b6b"/><path d="M28 13l-11 11-4 1 1-4 11-11z" fill="#5a7fb8" stroke="#34497d"/></symbol>
     <symbol id="d-salva" viewBox="0 0 32 32"><path d="M5 5h19l3 3v19H5z" fill="#8a9bc4" stroke="#5a6a94"/><path d="M10 5h11v8H10zM9 18h14v9H9z" fill="#fff"/></symbol>
     <symbol id="d-elimina" viewBox="0 0 32 32"><path d="M5 3h12l6 6v20H5z" fill="#fff" stroke="#6b6b6b"/><path d="M15 17l12 12M27 17L15 29" stroke="#c0392b" stroke-width="3"/></symbol>
     <symbol id="d-persona" viewBox="0 0 32 32"><circle cx="16" cy="10" r="6" fill="#3a6fb5"/><path d="M4 29c0-8 5-12 12-12s12 4 12 12z" fill="#3a6fb5"/></symbol>
+    <symbol id="d-piu" viewBox="0 0 32 32"><path d="M4 10h24v18H4zM4 16h24M4 22h24M13 10v18" fill="#fff" stroke="#6b6b6b"/><path d="M8 1v12M2 7h12" stroke="#3aa76d" stroke-width="3"/></symbol>
+    <symbol id="d-lente" viewBox="0 0 32 32"><path d="M3 4h24v20H3zM3 10h24M3 17h24M11 4v20" fill="#fff" stroke="#6b6b6b"/><circle cx="20" cy="19" r="6" fill="#e5eefa" stroke="#333" stroke-width="2"/><path d="M24 23l6 6" stroke="#333" stroke-width="3"/></symbol>
+    <symbol id="d-forbici" viewBox="0 0 32 32"><circle cx="8" cy="24" r="4" fill="none" stroke="#555" stroke-width="2"/><circle cx="24" cy="24" r="4" fill="none" stroke="#555" stroke-width="2"/><path d="M10 21L23 3M22 21L9 3" stroke="#555" stroke-width="2"/></symbol>
     <symbol id="d-camion" viewBox="0 0 32 32"><path d="M2 8h18v14H2z" fill="#f2c069" stroke="#c79436"/><path d="M20 13h6l4 5v4H20z" fill="#bcd0e8" stroke="#5a7fb8"/><circle cx="8" cy="24" r="3" fill="#555"/><circle cx="25" cy="24" r="3" fill="#555"/></symbol>
   </defs></svg>
-  <div class="menutabs"><div class="tab" data-tab="azioni">AZIONI</div><div class="tab contesto" data-tab="contesto" hidden></div><input class="search" placeholder="cerca nel manuale..."><div class="collapse">▲</div></div>
+  <div class="menutabs"><div class="tab" data-tab="azioni">AZIONI</div><span class="d-ctx"></span><input class="search" placeholder="cerca nel manuale..."><div class="collapse">▲</div></div>
   <div class="ribbon"></div>
   <div class="d-titolo"></div><div class="d-sotto"></div>
-  <div class="d-corpo"><nav class="d-menu">${MENU.map(([k,t])=>`<button data-scheda="${k}">${esc(t)}</button>`).join('')}</nav><div class="d-scheda"></div></div>`;
+  <div class="d-corpo"><nav class="d-menu">${menuHtml(MENU)}</nav><div class="d-scheda"></div></div>`;
   const $ = s => root.querySelector(s);
   const attesa = new Caricamento($('.d-corpo'), 'Caricamento ordine…');
   let ordine = null, dati = null, scheda = 'generali', grigliaRighe = null, attesaRighe = null;
 
   function mostraRibbon(nome){
-    const ctx = !!RIBBON[scheda];
-    const contesto = $('[data-tab=contesto]');
-    contesto.hidden = !ctx; contesto.style.display = ctx ? '' : 'none';
-    contesto.textContent = ctx ? scheda.toUpperCase() : '';
-    $('.menutabs').classList.toggle('ctx', ctx);
+    const linguette = CONTESTO[scheda] || [];
+    $('.menutabs').classList.toggle('ctx', linguette.length > 0);
     $('[data-tab=azioni]').classList.toggle('sel', nome==='azioni');
-    contesto.classList.toggle('sel', nome!=='azioni');
+    $('.d-ctx').innerHTML = linguette.map(k => `<div class="tab contesto ${k===nome?'sel':''}" data-tab="${k}">${k.toUpperCase()}</div>`).join('');
     $('.ribbon').innerHTML = RIBBON[nome];
   }
   function mostraScheda(k){
     scheda = k;
-    root.querySelectorAll('.d-menu button').forEach(b => { b.classList.toggle('sel', b.dataset.scheda===k); if (b.dataset.scheda===k) b.setAttribute('aria-current','page'); else b.removeAttribute('aria-current'); });
-    mostraRibbon(RIBBON[k] ? k : 'azioni');
+    marcaMenu(root, k);
+    mostraRibbon(CONTESTO[k] ? k : 'azioni');
     const el = $('.d-scheda');
     attesaRighe?.annulla(); grigliaRighe = attesaRighe = null;
     el.scrollTop = 0;
@@ -132,12 +173,38 @@ window.Dettaglio = (() => {
     else if (k==='righe') mostraRighe(el);
     else el.innerHTML = `<div class="d-vuota">Scheda "${esc(MENU.find(m=>m[0]===k)[1])}" non ancora disponibile.</div>`;
   }
-  async function mostraRighe(el){
-    el.innerHTML = '<div class="d-righe panel"><div class="cnt">Righe: 0</div><div class="gwrap" tabindex="0"></div></div>';
-    const pannello = el.firstChild, g = grigliaRighe = new Grid(pannello.querySelector('.gwrap'), detailCols, {countEl:pannello.querySelector('.cnt')});
+  function mostraRighe(el){
+    el.innerHTML = `<div class="d-righe panel"><div class="gtool">
+      <svg data-righe="aggiorna"><title>Aggiorna</title><use href="#i-refresh"/></svg>
+      <svg data-righe="stampa"><title>Stampa</title><use href="#i-print"/></svg>
+      <svg data-righe="esporta"><title>Esporta in Excel</title><use href="#i-excel"/></svg>
+      <select data-righe="zoom" aria-label="Zoom">${[80,90,100,110,125].map(z=>`<option ${z===100?'selected':''}>${z}%</option>`).join('')}</select>
+      <svg data-righe="layout"><title>Layout griglia</title><use href="#i-grid"/></svg>
+      <span class="cnt">Righe: 0</span></div><div class="gwrap" tabindex="0"></div></div>`;
+    const pannello = el.firstChild, gwrap = pannello.querySelector('.gwrap');
+    grigliaRighe = new Grid(gwrap, colonneRighe(dati.altri.valuta), {countEl:pannello.querySelector('.cnt'), filtri:false, totali:true, onOpen:apriRiga});
     attesaRighe = new Caricamento(pannello, 'Caricamento righe…');
-    const r = await attesaRighe.esegui(`/api/ordini/${ordine.id}/righe`);
+    pannello.querySelector('select').onchange = e => gwrap.style.setProperty('--fs', 12*parseInt(e.target.value)/100 + 'px');
+    caricaRigheDettaglio(false);
+  }
+  async function caricaRigheDettaglio(aggiorna){
+    const g = grigliaRighe, r = await attesaRighe.esegui(`/api/ordini/${ordine.id}/righe`, aggiorna ? {aggiorna:true} : undefined);
     if (r !== undefined && g === grigliaRighe) g.setRows(r || []);
+  }
+  function apriRiga(){
+    const r = grigliaRighe?.current(), gwrap = $('.d-righe .gwrap');
+    if (!r) return toast('Selezionare una riga');
+    const alto = gwrap.scrollTop, lato = gwrap.scrollLeft;
+    DettaglioRiga.apri(ordine.id, r, () => { gwrap.scrollTop = alto; gwrap.scrollLeft = lato; gwrap.focus({preventScroll:true}); });
+  }
+  function azioneRighe(a){
+    if (a==='aggiorna') return caricaRigheDettaglio(true);
+    if (a==='stampa') return window.print();
+    if (a==='layout') return fare('Layout griglia');
+    if (a==='esporta') {
+      const l = document.createElement('a'); l.href = URL.createObjectURL(new Blob(['\ufeff' + grigliaRighe.toCSV()], {type:'text/csv;charset=utf-8'}));
+      l.download = `ordine_${ordine.num_reg ?? ordine.id}_righe.csv`; l.click(); setTimeout(() => URL.revokeObjectURL(l.href), 1000);
+    }
   }
   function titoli(){
     const o = dati || ordine, n = o.num_reg ?? '';
@@ -166,22 +233,25 @@ window.Dettaglio = (() => {
   const aperto = () => document.body.classList.contains('in-dettaglio');
   function fare(azione){
     if (azione==='abbandona') return chiudi();
+    if (azione==='Dettaglio riga') return apriRiga();
     toast(`"${azione}": da collegare al servizio ERP`);
   }
 
   root.addEventListener('click', e => {
     const s = e.target.closest('[data-scheda]'); if (s) return mostraScheda(s.dataset.scheda);
-    const t = e.target.closest('[data-tab]'); if (t) return mostraRibbon(t.dataset.tab==='azioni' ? 'azioni' : scheda);
+    const t = e.target.closest('[data-tab]'); if (t) return mostraRibbon(t.dataset.tab);
+    const q = e.target.closest('svg[data-righe]'); if (q) return azioneRighe(q.dataset.righe);
     const c = e.target.closest('[data-chiudi]'); if (c) { c.textContent = c.closest('.d-sez').classList.toggle('chiusa') ? '⌄' : '⌃'; return; }
     const f = e.target.closest('[data-fare]'); if (f) fare(f.dataset.fare);
   });
   // in fase di cattura: nel dettaglio i tasti dell'elenco (F7, F11) non devono agire
   document.addEventListener('keydown', e => {
-    if (!aperto()) return;
-    const tasti = {F1:'abbandona', F8:'Elimina', F9:'Varia'};
+    if (!aperto() || DettaglioRiga.aperta()) return;
+    // nella scheda Righe F7 apre il dettaglio della riga ed Elimina è disattivato
+    const tasti = scheda==='righe' ? {F1:'abbandona', F7:'Dettaglio riga', F9:'Varia'} : {F1:'abbandona', F8:'Elimina', F9:'Varia'};
     if (tasti[e.key]) { e.preventDefault(); e.stopPropagation(); fare(tasti[e.key]); }
     else if (e.key==='F7' || e.key==='F11') { e.preventDefault(); e.stopPropagation(); }
   }, true);
 
-  return { apri, chiudi };
+  return { apri, chiudi, ui: { data, casella, riga, campo, interruttore, num, quantita, sezione, grande, gruppo, menuHtml, marcaMenu } };
 })();

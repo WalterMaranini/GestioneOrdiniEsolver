@@ -9,9 +9,10 @@ GestioneOrdiniEsolver/
   app/
     main.py            # API FastAPI + pagina
     esolver.py         # servizi REST di eSolver (token, ordini, quantità) e mappatura dei campi
-    dettaglio.py       # dati delle schede del singolo ordine, con le descrizioni dai report
+    dettaglio.py       # dati del singolo ordine e della singola riga, con le descrizioni dai report
     static/index.html  # interfaccia (ribbon, viste, filtri, griglia testata + righe)
     static/dettaglio.* # maschera di dettaglio dell'ordine (schede Generali, Condizioni, Logistica, Righe)
+    static/riga.js     # maschera di dettaglio della riga (scheda Generali)
     esolver_mcp.py     # alternativa: lettura dal server MCP ES_VENDITE (login OAuth, sola lettura)
     static/snapshot.json # fotografia di ordini reali: NON è nel repository (vedi sotto)
 ```
@@ -64,7 +65,8 @@ Apri: http://127.0.0.1:8000/?ditta=WM&ragsoc=DITTA%20DEMO&utente=UTENTE
 | GET | `/api/ordini` | elenco con filtri: `reg_da, reg_a, doc_da, doc_a, num_da, num_a, num_doc, intestatario, saldato (Si/No/Tutti), vista` |
 | GET | `/api/ordini/{id}` | testata ordine |
 | GET | `/api/ordini/{id}/dettaglio` | dati delle schede dell'ordine |
-| GET | `/api/ordini/{id}/righe` | righe ordine |
+| GET | `/api/ordini/{id}/righe` | righe ordine (`aggiorna=true` le rilegge da eSolver) |
+| GET | `/api/ordini/{id}/righe/{id_riga}` | dettaglio della singola riga |
 | GET | `/docs` | documentazione interattiva (Swagger) |
 
 ## Note sul servizio eSolver
@@ -73,6 +75,9 @@ Apri: http://127.0.0.1:8000/?ditta=WM&ragsoc=DITTA%20DEMO&utente=UTENTE
 - Il dettaglio viene da LeggiElenco; le descrizioni da TIPIDOC, CONDPAGELENCO, CLIENTIELENCO, CLIENTIINDIRIZZI,
   AGENTIELENCO e, per zona e capo area, DOCVEN (`_MCP`). Restano vuoti i campi che nessuno espone (rif. commessa, contatto, IBAN,
   rif. banca estera, e-mail, intestatario DDT, priorità, tipo evasione) e senza descrizione divisione, centro, stato, valuta.
+- Il dettaglio della riga viene da LeggiElenco; tipo riga e nome del magazzino da DOCVEN (vuoti se la riga manca),
+  UdM magazzino da ARTELENCO (`_MCP`). Vuoti: origine prezzo e sconti, promozione, netto sconti, formula, codice UdM secondaria,
+  scadenza lotto. "Riga da stampare" non si usa: il servizio restituisce sempre 0, anche se in eSolver è attivo.
 - **Il report non contiene tutti gli ordini**: mancano anche alcuni definitivi (4 su 58 nel periodo
   24/10-22/11/2026, causa da chiarire), che quindi non compaiono nell'elenco.
 - "Saldato" vale Sì se lo sono tutte le righe presenti nel report: può differire dal filtro di eSolver.

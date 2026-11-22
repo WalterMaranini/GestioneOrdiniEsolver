@@ -324,6 +324,8 @@ table.grid input[type=checkbox]{margin:0;width:11px;height:11px;vertical-align:m
 
 <!-- dettaglio ordine: riempito da dettaglio.js -->
 <div id="dett"></div>
+<!-- dettaglio riga: riempito da riga.js -->
+<div id="driga"></div>
 
 <div class="status"><span id="stVer">EG100A (x64)</span><span class="sep">|</span><span id="stUser">UTENTE</span><span class="sep">|</span><span id="stDitta">WM/99/99</span></div>
 
@@ -471,7 +473,8 @@ class Grid {
     } else {
       h += '<tr class="h1">' + cols.map(c=>`<th class="${c.key?'sortable':''} ${c.hcls||''}" data-k="${c.key||''}">${th(c)}</th>`).join('') + '</tr>';
     }
-    h += '<tr class="hf">' + cols.map((c,i)=> i===0 ? '<th class="fun">▼</th>' : `<th>${c.key && c.filter!==false ? `<input data-f="${c.key}" value="${esc(this.filters[c.key]||'')}">` : ''}</th>`).join('') + '</tr></thead><tbody>';
+    if (this.opt.filtri !== false) h += '<tr class="hf">' + cols.map((c,i)=> i===0 ? '<th class="fun">▼</th>' : `<th>${c.key && c.filter!==false ? `<input data-f="${c.key}" value="${esc(this.filters[c.key]||'')}">` : ''}</th>`).join('') + '</tr>';
+    h += '</thead><tbody>';
     if (!this.view.length) h += `<tr><td colspan="${cols.length}" class="empty">Nessun dato da visualizzare</td></tr>`;
     this.view.forEach((r,i) => {
       h += `<tr data-i="${i}" class="${i===this.cur?'cur':''}">` + cols.map(c => {
@@ -481,7 +484,9 @@ class Grid {
         return `<td class="${c.cls||''}" title="${esc(this.text(c,r))}">${esc(this.text(c,r))}</td>`;
       }).join('') + '</tr>';
     });
-    h += '</tbody></table>';
+    h += '</tbody>';
+    if (this.opt.totali) h += `<tfoot><tr>${cols.map((c,i) => `<td>${i===0 ? 'Tot:' : ''}</td>`).join('')}</tr></tfoot>`;
+    h += '</table>';
     const ae = document.activeElement, focused = this.el.contains(ae) ? ae.dataset?.f : null, caret = ae?.selectionStart;
     this.el.innerHTML = h;
     if (focused) { const inp = this.el.querySelector(`input[data-f="${focused}"]`); if (inp) { inp.focus(); inp.setSelectionRange(caret,caret); } }
@@ -690,5 +695,6 @@ document.addEventListener('keydown', e => {
 loadOrdini();
 </script>
 <script src="/static/dettaglio.js"></script>
+<script src="/static/riga.js"></script>
 </body>
 </html>
