@@ -5,8 +5,8 @@ Avvio (dalla cartella erp_ordini):
     uvicorn app.main:app --host 127.0.0.1 --port 8000
 
 Sorgente dati (variabile d'ambiente ERP_DATA):
-    snapshot  (default) fotografia dei dati eSolver in app/static/snapshot.json
-    esolver   lettura in tempo reale da ES_SRV_ORVLeggiElenco (vedi esolver.py per la configurazione)
+    esolver   (default) lettura in tempo reale dai servizi REST (vedi esolver.py per la configurazione)
+    snapshot  fotografia dei dati eSolver in app/static/snapshot.json
     mcp       lettura in tempo reale dal server MCP ES_VENDITE (vedi esolver_mcp.py: serve il login)
 
 Apri:  http://127.0.0.1:8000/?ditta=WM&ragsoc=DITTA%20DEMO&utente=UTENTE
@@ -18,6 +18,7 @@ from datetime import date
 from pathlib import Path
 from typing import Optional
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -30,13 +31,16 @@ app = FastAPI(title="ERP Tools - Ordini di vendita")
 
 
 def _repository():
-    sorgente = os.environ.get("ERP_DATA", "snapshot")
+    load_dotenv()  # file .env del progetto; le variabili già impostate hanno la precedenza
+    sorgente = os.environ.get("ERP_DATA") or "esolver"
     if sorgente == "mcp":
         from .esolver_mcp import McpRepository  # importato qui: lo snapshot non richiede l'SDK MCP
         return McpRepository()
-    if sorgente == "esolver":
-        return EsolverRepository()
-    return SnapshotRepository(STATIC / "snapshot.json")
+    if sorgente == "snapshot":
+        return SnapshotRepository(STATIC / "snapshot.json")
+    if sorgente != "esolver":
+        raise RuntimeError(f"ERP_DATA non valido: {sorgente} (valori ammessi: esolver, snapshot, mcp)")
+    return EsolverRepository()
 
 
 repo = _repository()

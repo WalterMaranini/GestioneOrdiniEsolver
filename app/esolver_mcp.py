@@ -20,12 +20,10 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
 import os
 import sys
 import threading
 import webbrowser
-from datetime import date
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -36,9 +34,7 @@ from mcp.client.streamable_http import streamable_http_client
 from mcp.shared._httpx_utils import create_mcp_http_client
 from mcp.shared.auth import OAuthClientInformationFull, OAuthClientMetadata, OAuthToken
 
-from .esolver import EsolverError, EsolverRepository
-
-log = logging.getLogger(__name__)
+from .esolver import DOCVEN, EsolverError, EsolverRepository, documenti_nuovi
 
 MCP_URL = "https://mcpesolver.sistemi.com/mcp/App-Sistemi/ES_VENDITE"
 REDIRECT_PORT = 8766
@@ -48,10 +44,7 @@ MAX_EVENTO = 64 * 1024 * 1024  # un ordine da 50 righe pesa circa 260 KB
 
 # Il server espone anche servizi di scrittura: il programma può chiamare solo questi.
 LEGGI_ORDINI = "ES_SRV_ORVLeggiElenco_Post"
-DOCVEN = "DOCVEN_MCP"
 STRUMENTI_AMMESSI = {LEGGI_ORDINI, DOCVEN}
-
-TIPO_MOVIMENTO_ORDINE = "4"
 
 
 class LoginRichiesto(EsolverError):
@@ -262,80 +255,31 @@ class McpRepository(EsolverRepository):
     def __init__(self, mcp: McpEsolver | None = None, group: str | None = None):
         self.mcp = mcp or McpEsolver()
         self.group = group or os.environ.get("ESOLVER_GROUP", "WM")
-        self._cache_righe: dict[int, list[dict]] = {}
-        self._cache_ordini: dict[int, dict] = {}
-        self._con_quantita: set[int] = set()
+        self._azzera()
 
     def _chiama(self, payload: dict) -> list[dict]:
         async def leggi(client):
             dati, visti = [], set()
             while True:
-                d = await self.mcp.chiama(client, LEGGI_ORDINI, {
-                    "X-BC-GROUP": self.group, **payload, "Skip": len(dati), "Take": self.PAGE})
-                if d.get("Risposta", {}).get("Esito") != 1:
-                    raise EsolverError(f"eSolver: {d.get('Risposta', {}).get('Errori')}")
-                # NumeroDocumenti conta la pagina, non il totale: si prosegue finché arrivano ordini nuovi
-                nuovi = [o for o in d.get("Dati") or [] if o["IdDocumento"] not in visti]
+                nuovi = documenti_nuovi(await self.mcp.chiama(client, LEGGI_ORDINI, {
+                    "X-BC-GROUP": self.group, **payload, "Skip": len(dati), "Take": self.PAGE}), visti)
                 if not nuovi:
                     return dati
-                visti.update(o["IdDocumento"] for o in nuovi)
                 dati += nuovi
         return self.mcp.esegui(leggi)
 
-    def lista_ordini(self, **filtri) -> list[dict]:
-        self._con_quantita.clear()
-        return super().lista_ordini(**filtri)
-
-    def righe_ordine(self, oid: int) -> list[dict] | None:
-        righe = super().righe_ordine(oid)
-        if righe is None or oid in self._con_quantita:
-            return righe
-        try:
-            evaso = self._quantita(self._cache_ordini[oid])
-        except LoginRichiesto:
-            raise
-        except EsolverError as e:
-            log.warning("Quantità evase non disponibili per l'ordine %s: %s", oid, e)
-            return [applica_quantita(r, None) for r in righe]
-        righe = [applica_quantita(r, evaso.get(r["id_riga"])) for r in righe]
-        self._cache_righe[oid] = righe
-        self._con_quantita.add(oid)
-        return righe
-
-    def _quantita(self, o: dict) -> dict[int, dict]:
-        """Righe DOCVEN dell'ordine. Il report non filtra per IdDocumento: si usano cliente e data."""
-        giorno = date.fromisoformat(o["data_reg"]).strftime("%d%m%Y")
-        argomenti = {
-            "X-BC-GROUP": self.group,
-            "Filters": [
-                {"Name": "TipoMovimento", "Operators": 11, "Values": [TIPO_MOVIMENTO_ORDINE]},
-                {"Name": "CliForCod", "Operators": 11, "Values": [o["cod_cliente"]]},
-                {"Name": "DataRegistraz", "Operators": 3, "Values": [giorno, giorno]},
-            ],
-            "Digits": [],
-        }
-
+    def _righe_docven(self, filtri: list[dict]) -> list[dict]:
         async def leggi(client):
             righe = []
             while True:
                 d = await self.mcp.chiama(client, DOCVEN, {
-                    **argomenti, "Skip": len(righe), "Take": self.PAGE_DOCVEN})
+                    "X-BC-GROUP": self.group, "Filters": filtri, "Digits": [],
+                    "Skip": len(righe), "Take": self.PAGE_DOCVEN})
                 pagina = d.get("result") or []
                 righe += pagina
                 if not pagina or len(righe) >= d.get("count", 0):
                     return righe
-        return {r["IdRigaDoc"]: r for r in self.mcp.esegui(leggi) if r.get("IdDocumento") == o["id"]}
-
-
-def applica_quantita(riga: dict, docven: dict | None) -> dict:
-    """Aggiunge le quantità di DOCVEN; se la riga non c'è restano sconosciute (None)."""
-    cons = docven.get("QtTotCarScarUmDoc") if docven else None
-    residua = docven.get("QtOrdImpUmDoc") if docven else None
-    stato = riga["stato_evasione"]
-    if stato != "evasa" and cons:
-        stato = "parziale"
-    return {**riga, "stato_evasione": stato, "qta_in_spedizione": None,
-            "qta_consegnata": cons, "qta_residua": residua}
+        return self.mcp.esegui(leggi)
 
 
 # ----------------------------------------------------------------- comandi

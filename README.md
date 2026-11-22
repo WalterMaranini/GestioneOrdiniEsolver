@@ -8,39 +8,37 @@ GestioneOrdiniEsolver/
   requirements.txt
   app/
     main.py            # API FastAPI + pagina
-    esolver.py         # collegamento a eSolver (ES_SRV_ORVLeggiElenco) e mappatura dei campi
+    esolver.py         # servizi REST di eSolver (token, ordini, quantità) e mappatura dei campi
     static/index.html  # interfaccia (ribbon, viste, filtri, griglia testata + righe)
-    esolver_mcp.py     # lettura dal server MCP ES_VENDITE (login OAuth, sola lettura)
+    esolver_mcp.py     # alternativa: lettura dal server MCP ES_VENDITE (login OAuth, sola lettura)
     static/snapshot.json # fotografia di ordini reali: NON è nel repository (vedi sotto)
 ```
 
 ## Avvio
 ```
-python -m venv venv
-venv\Scripts\pip install -r requirements.txt
-venv\Scripts\uvicorn app.main:app --host 127.0.0.1 --port 8000
+py -3.14 -m venv .venv
+.venv\Scripts\pip install -r requirements.txt
+.venv\Scripts\uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 Apri: http://127.0.0.1:8000/?ditta=WM&ragsoc=DITTA%20DEMO&utente=UTENTE
 
-### Sorgente dati
-- default: `app/static/snapshot.json`, una fotografia di ordini letti da eSolver.
-  **Il file contiene dati reali ed è escluso da git**: dopo un clone non c'è e l'app con la sorgente
-  predefinita non parte (`FileNotFoundError`). Le alternative sono:
-  - usare una sorgente in tempo reale (`ERP_DATA=mcp` o `ERP_DATA=esolver`, vedi sotto);
-  - copiare un proprio snapshot in `app/static/snapshot.json`, nel formato
-    `{"ordini": [...], "righe": {"<id ordine>": [...]}}` con i campi prodotti da `map_ordine` e `map_riga`.
+### Sorgente dati (variabile `ERP_DATA`)
+- `esolver` (default): tempo reale dai servizi REST, senza passare dall'MCP
+  ([swagger](https://apiesolver.sistemi.com/swagger/ui/index)). Copiare `.env.example` in `.env`, poi:
+  ```
+  .venv\Scripts\python -m app.esolver cifra    (mostra lo SHA256 della password, da riportare in .env)
+  .venv\Scripts\python -m app.esolver test     (verifica accesso, ordini e report quantità)
+  ```
+  Il token si ottiene con `/auth/App-{AppId}/Token`, resta solo in memoria e si rinnova da solo.
+  Il file `.env` è escluso da git: lo SHA256 vale quanto la password.
+- `snapshot`: `app/static/snapshot.json`, una fotografia di ordini letti da eSolver.
+  **Il file contiene dati reali ed è escluso da git**: dopo un clone non c'è e va creato, nel formato
+  `{"ordini": [...], "righe": {"<id ordine>": [...]}}` con i campi prodotti da `map_ordine` e `map_riga`.
 
   La maschera si apre sugli ultimi 30 giorni: se lo snapshot è più vecchio, allargare il filtro
   "Data registrazione" per vederne gli ordini.
-- tempo reale: impostare le variabili e avviare con `ERP_DATA=esolver`
-  ```
-  set ERP_DATA=esolver
-  set ESOLVER_ORV_URL=https://<server-esolver>/.../ES_SRV_ORVLeggiElenco
-  set ESOLVER_GROUP=WM
-  set ESOLVER_AUTH=Bearer <token>
-  ```
 
-- tramite il server MCP ES_VENDITE (sola lettura, login nel browser):
+- `mcp`: tramite il server MCP ES_VENDITE (sola lettura, login nel browser):
   ```
   python -m app.esolver_mcp login
   set ERP_DATA=mcp
@@ -67,9 +65,9 @@ Apri: http://127.0.0.1:8000/?ditta=WM&ragsoc=DITTA%20DEMO&utente=UTENTE
 | GET | `/docs` | documentazione interattiva (Swagger) |
 
 ## Note sul servizio eSolver
-- ES_SRV_ORVLeggiElenco restituisce testata **e righe complete** (~260 KB per ordine): l'elenco
+- LeggiElenco restituisce testata **e righe complete** (~260 KB per ordine): l'elenco
   carica tutto in una volta e le righe vengono servite dalla cache, senza nuove chiamate.
   Con molti ordini conviene usare per l'elenco il report DOCVEN_MCP e il servizio solo per il dettaglio.
-- Il servizio non riporta le quantità evase/consegnate: oggi sono 0 (o pari alla quantità se la riga
-  è saldata). Per i valori veri serve il report DOCVEN_MCP (campi residuo/evaso).
+- Il servizio non riporta le quantità evase/consegnate: si leggono dal report DOCVEN_MCP quando si apre
+  un ordine. Il report non contiene tutti gli ordini (esclude i provvisori): dove manca la cella resta vuota.
 - Il "Riferimento" è ricostruito come anno.1.numero registrazione: il "1" centrale è un'ipotesi da verificare.

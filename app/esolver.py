@@ -1,25 +1,53 @@
 """
-Collegamento a eSolver tramite il servizio ES_SRV_ORVLeggiElenco (ordini di vendita).
+Collegamento diretto ai servizi REST di eSolver (swagger: https://apiesolver.sistemi.com/swagger/ui/index).
 
 Contiene:
 - map_ordine / map_riga: traducono la risposta di eSolver nei campi usati dalla maschera
-- EsolverRepository: chiama il web service in tempo reale
+- EsolverRest: client REST (token, gruppo, errori)
+- EsolverRepository: legge gli ordini in tempo reale
 - SnapshotRepository: legge una fotografia dei dati salvata in JSON (utile per demo e test)
 
-Configurazione di EsolverRepository tramite variabili d'ambiente (file config\\.env):
-    ESOLVER_ORV_URL   URL completo del servizio ES_SRV_ORVLeggiElenco (POST)
-    ESOLVER_GROUP     codice gruppo (header X-BC-GROUP), es. WM
-    ESOLVER_AUTH      valore dell'header Authorization (es. "Bearer xxx" o "Basic xxx")
+Servizi usati, tutti di sola lettura:
+- /auth/App-{AppId}/Token                   token di accesso, richiesto di nuovo quando scade
+- /api/ES_ORV/App-{AppId}/LeggiElenco       testata e righe degli ordini
+- /report/App-{AppId}/RunReport/DOCVEN_MCP  quantità consegnate e residue. Non contiene tutti gli ordini
+  (esclude i provvisori): dove la riga manca le quantità restano vuote (None), non 0.
+
+Configurazione tramite variabili d'ambiente o file .env nella cartella del progetto (vedi .env.example):
+    ESOLVER_USER              utente eSolver
+    ESOLVER_PASSWORD_SHA256   password cifrata SHA256 (comando: python -m app.esolver cifra)
+    ESOLVER_GROUP             codice gruppo, es. WM
+    ESOLVER_GROUP_PWD_SHA256  eventuale password del gruppo, cifrata SHA256
+    ESOLVER_APPID             "Sistemi" (default) o la ApiKey fornita per le installazioni SIR
+    ESOLVER_URL               indirizzo dei servizi (default: https://apiesolver.sistemi.com)
+
+Comandi:
+    python -m app.esolver cifra   chiede una password e ne mostra lo SHA256
+    python -m app.esolver test    verifica accesso, ordini e report quantità
 """
 from __future__ import annotations
 
+import getpass
+import hashlib
 import json
+import logging
 import os
-from datetime import date
+import ssl
+import sys
+import threading
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Optional
 
 import httpx
+from dotenv import load_dotenv
+
+log = logging.getLogger(__name__)
+
+ESOLVER_URL = "https://apiesolver.sistemi.com"
+DOCVEN = "DOCVEN_MCP"
+TIPO_MOVIMENTO_ORDINE = "4"
+
 
 class EsolverError(RuntimeError):
     """Errore nella lettura dei dati da eSolver."""
@@ -27,24 +55,36 @@ class EsolverError(RuntimeError):
     status = 502  # codice HTTP restituito al browser
 
 
+class ConfigurazioneMancante(EsolverError):
+    """Mancano le credenziali per i servizi REST."""
+
+    status = 503
+
+
 # ----------------------------------------------------------------- mappatura campi
+
+def _data(v) -> str:
+    """Data ISO senza ora. I servizi REST usano date-time: il valore nullo può arrivare come anno 1 o 1900."""
+    v = str(v or "")[:10]
+    return "" if v[:4] in ("0001", "1900") else v
+
 
 def map_riga(r: dict) -> dict:
     q = float(r.get("Quantita") or 0)
     saldata = bool(r.get("RigaSaldata"))
-    # ES_SRV_ORVLeggiElenco non riporta le quantità evase: per quelle serve il report DOCVEN_MCP.
+    # LeggiElenco non riporta le quantità evase: si aggiungono dopo con il report DOCVEN_MCP.
     cons = q if saldata else 0.0
     return {
         "stato_evasione": "evasa" if saldata else "aperta",
         "id_riga": r.get("IdRigaDoc"),
         "n": r.get("NumProgrRiga"),
         "tipo_riga": r.get("TipoRiga"),
-        "codice": r.get("CodArt", ""),
-        "variante": r.get("VarianteArt", ""),
-        "descrizione": r.get("DesArt", ""),
-        "data_consegna": r.get("DataConsegnaConf") or r.get("DataConsegnaRich") or "",
-        "data_spedizione": r.get("DataSpedizione") or "",
-        "udm": r.get("UnitaMisura", ""),
+        "codice": r.get("CodArt") or "",
+        "variante": r.get("VarianteArt") or "",
+        "descrizione": r.get("DesArt") or "",
+        "data_consegna": _data(r.get("DataConsegnaConf")) or _data(r.get("DataConsegnaRich")),
+        "data_spedizione": _data(r.get("DataSpedizione")),
+        "udm": r.get("UnitaMisura") or "",
         "quantita": q,
         "qta_in_spedizione": 0.0,
         "qta_consegnata": cons,
@@ -56,7 +96,7 @@ def map_riga(r: dict) -> dict:
 
 def map_ordine(o: dict) -> dict:
     righe = o.get("Righe") or []
-    data_reg = o.get("DataRegistrazione") or ""
+    data_reg = _data(o.get("DataRegistrazione"))
     anno = int(data_reg[:4]) if data_reg else None
     return {
         "id": o["IdDocumento"],
@@ -64,21 +104,32 @@ def map_ordine(o: dict) -> dict:
         "data_reg": data_reg,
         # Riferimento come appare in eSolver (anno.sezionale.numero): il sezionale "1" è un'ipotesi
         "riferimento": f"{anno}.1.{o.get('NumRegistraz')}" if anno else "",
-        "num_doc": o.get("NumDocOriginale", ""),
-        "data_doc": o.get("DataOriginale") or "",
-        "cod_cliente": str(o.get("CodCliFor", "")),
-        "ragione_sociale": o.get("CliForRagSoc1", ""),
-        "comune": o.get("CliForLocalita1", ""),
-        "frazione": o.get("CliForLocalita2", ""),
-        "provincia": o.get("CliForProv", ""),
-        "stato": o.get("SpedCodStatoUe", ""),
+        "num_doc": o.get("NumDocOriginale") or "",
+        "data_doc": _data(o.get("DataOriginale")),
+        "cod_cliente": str(o.get("CodCliFor") or ""),
+        "ragione_sociale": o.get("CliForRagSoc1") or "",
+        "comune": o.get("CliForLocalita1") or "",
+        "frazione": o.get("CliForLocalita2") or "",
+        "provincia": o.get("CliForProv") or "",
+        "stato": o.get("SpedCodStatoUe") or "",
         "esercizio": anno,
-        "destinatario": o.get("DatiSpedRagSoc1", ""),
+        "destinatario": o.get("DatiSpedRagSoc1") or "",
         "saldato": bool(righe) and all(r.get("RigaSaldata") for r in righe),
         "confermato": bool(o.get("OrdineConfermato")),
         "n_righe": len(righe),
         "totale": round(sum(float(r.get("ImportoValuta") or 0) for r in righe), 2),
     }
+
+
+def applica_quantita(riga: dict, docven: dict | None) -> dict:
+    """Aggiunge le quantità di DOCVEN; se la riga non c'è restano sconosciute (None)."""
+    cons = docven.get("QtTotCarScarUmDoc") if docven else None
+    residua = docven.get("QtOrdImpUmDoc") if docven else None
+    stato = riga["stato_evasione"]
+    if stato != "evasa" and cons:
+        stato = "parziale"
+    return {**riga, "stato_evasione": stato, "qta_in_spedizione": None,
+            "qta_consegnata": cons, "qta_residua": residua}
 
 
 # ----------------------------------------------------------------- filtri comuni
@@ -126,35 +177,113 @@ class SnapshotRepository:
         return self._righe.get(oid)
 
 
+class EsolverRest:
+    """Client dei servizi REST: ottiene il token, lo rinnova quando scade e traduce gli errori."""
+
+    def __init__(self, transport: httpx.BaseTransport | None = None):
+        self.base = (os.environ.get("ESOLVER_URL") or ESOLVER_URL).rstrip("/")
+        self.app = "App-" + (os.environ.get("ESOLVER_APPID") or "Sistemi")
+        self.user = os.environ.get("ESOLVER_USER") or ""
+        self.key = os.environ.get("ESOLVER_PASSWORD_SHA256") or ""
+        self.group = os.environ.get("ESOLVER_GROUP") or "WM"
+        headers = {"X-BC-Gruppo": self.group}
+        if os.environ.get("ESOLVER_GROUP_PWD_SHA256"):
+            headers["X-BC-GruppoPwd"] = os.environ["ESOLVER_GROUP_PWD_SHA256"]
+        # i certificati sono quelli di Windows, compresi quelli aziendali
+        self.http = httpx.Client(headers=headers, timeout=120, transport=transport,
+                                 verify=ssl.create_default_context())
+        self._token = ""
+        self._lock = threading.Lock()
+
+    def leggi_ordini(self, payload: dict) -> dict:
+        return self._post(f"/api/ES_ORV/{self.app}/LeggiElenco", payload)
+
+    def report(self, nome: str, payload: dict):
+        return self._post(f"/report/{self.app}/RunReport/{nome}", payload)
+
+    def accedi(self, scaduto: str = "") -> str:
+        """Restituisce il token; se è assente o è quello scaduto ne chiede uno nuovo."""
+        with self._lock:
+            # un altro thread può averlo già rinnovato
+            if not self._token or self._token == scaduto:
+                self._token = ""
+                self._token = self._nuovo_token()
+            return self._token
+
+    def _post(self, percorso: str, payload: dict):
+        token = self.accedi()
+        r = self._invia(percorso, payload, {"X-BC-Authorization": token})
+        if self._rifiutato(r):  # token scaduto: si accede di nuovo, una volta sola
+            token = self.accedi(scaduto=token)
+            r = self._invia(percorso, payload, {"X-BC-Authorization": token})
+        if not r.is_success:
+            raise EsolverError(f"eSolver: HTTP {r.status_code} da {percorso} {r.text[:200]}".rstrip())
+        return self._json(r, percorso)
+
+    @staticmethod
+    def _rifiutato(r: httpx.Response) -> bool:
+        # lo swagger documenta 401, ma senza token il server risponde 400 senza testo
+        return r.status_code == 401 or (r.status_code == 400 and not r.content)
+
+    def _nuovo_token(self) -> str:
+        if not self.user or not self.key:
+            raise ConfigurazioneMancante(
+                "Credenziali eSolver mancanti: impostare ESOLVER_USER e ESOLVER_PASSWORD_SHA256 nel file .env")
+        percorso = f"/auth/{self.app}/Token"
+        r = self._invia(percorso, {"User": self.user, "Key": self.key}, {})
+        if not r.is_success:  # il testo della risposta non si riporta: è il servizio delle credenziali
+            raise EsolverError(f"Accesso a eSolver rifiutato (HTTP {r.status_code}): verificare utente e password")
+        token = self._json(r, percorso)
+        if not isinstance(token, str) or not token.strip():
+            raise EsolverError("Accesso a eSolver: il servizio Token non ha restituito un token")
+        return token.strip()
+
+    def _invia(self, percorso: str, payload: dict, headers: dict) -> httpx.Response:
+        try:
+            return self.http.post(self.base + percorso, json=payload, headers=headers)
+        except httpx.HTTPError as e:
+            raise EsolverError(f"eSolver non raggiungibile: {type(e).__name__}: {e}") from e
+
+    @staticmethod
+    def _json(r: httpx.Response, percorso: str):
+        try:
+            return r.json()
+        except ValueError:
+            raise EsolverError(f"eSolver: risposta non valida da {percorso}") from None
+
+
 class EsolverRepository:
-    """Legge in tempo reale da eSolver con ES_SRV_ORVLeggiElenco."""
+    """Legge gli ordini in tempo reale dai servizi REST."""
 
     PAGE = 20
 
-    def __init__(self, url: str | None = None, group: str | None = None, auth: str | None = None):
-        self.url = url or os.environ["ESOLVER_ORV_URL"]
-        self.group = group or os.environ.get("ESOLVER_GROUP", "WM")
-        headers = {"X-BC-GROUP": self.group, "Content-Type": "application/json"}
-        if auth or os.environ.get("ESOLVER_AUTH"):
-            headers["Authorization"] = auth or os.environ["ESOLVER_AUTH"]
-        self.http = httpx.Client(headers=headers, timeout=120)
+    def __init__(self, rest: EsolverRest | None = None):
+        self.rest = rest or EsolverRest()
+        self._azzera()
+
+    def _azzera(self):
         self._cache_righe: dict[int, list[dict]] = {}
         self._cache_ordini: dict[int, dict] = {}
+        self._con_quantita: set[int] = set()
 
     def _chiama(self, payload: dict) -> list[dict]:
-        """Chiama il servizio paginando con Skip/Take e restituisce i documenti grezzi."""
-        dati, skip = [], 0
+        """Legge tutti i documenti grezzi, una pagina alla volta."""
+        dati: list[dict] = []
+        visti: set[int] = set()
         while True:
-            r = self.http.post(self.url, json={**payload, "Skip": skip, "Take": self.PAGE})
-            r.raise_for_status()
-            d = r.json()
-            if d.get("Risposta", {}).get("Esito") != 1:
-                raise EsolverError(f"eSolver: {d.get('Risposta', {}).get('Errori')}")
-            pagina = d.get("Dati") or []
-            dati += pagina
-            if len(pagina) < self.PAGE:
+            nuovi = documenti_nuovi(
+                self.rest.leggi_ordini({**payload, "Skip": len(dati), "Take": self.PAGE}), visti)
+            if not nuovi:
                 return dati
-            skip += self.PAGE
+            dati += nuovi
+
+    def _righe_docven(self, filtri: list[dict]) -> list[dict]:
+        # Take 0 = tutte le righe: senza un ordinamento garantito le pagine potrebbero ripetersi
+        d = self.rest.report(DOCVEN, {"Skip": 0, "Take": 0, "Filters": filtri, "Digits": []})
+        righe = d.get("result") if isinstance(d, dict) else d
+        if not isinstance(righe, list):
+            raise EsolverError(f"{DOCVEN}: risposta inattesa")
+        return righe
 
     def lista_ordini(self, reg_da: Optional[date] = None, reg_a: Optional[date] = None,
                      num_da: Optional[int] = None, num_a: Optional[int] = None,
@@ -172,12 +301,16 @@ class EsolverRepository:
 
         ordini = []
         for raw in self._chiama(payload):
-            o = map_ordine(raw)
-            self._cache_ordini[o["id"]] = o
-            self._cache_righe[o["id"]] = [map_riga(r) for r in raw.get("Righe") or []]
-            ordini.append(o)
+            ordini.append(self._memorizza(raw))
         # i filtri non gestiti dal servizio (ragione sociale, date documento...) si applicano qui
         return filtra(ordini, intestatario=intestatario, saldato=saldato, vista=vista, **altri)
+
+    def _memorizza(self, raw: dict) -> dict:
+        o = map_ordine(raw)
+        self._con_quantita.discard(o["id"])
+        self._cache_ordini[o["id"]] = o
+        self._cache_righe[o["id"]] = [map_riga(r) for r in raw.get("Righe") or []]
+        return o
 
     def ordine(self, oid: int) -> Optional[dict]:
         if oid not in self._cache_ordini:
@@ -187,9 +320,80 @@ class EsolverRepository:
     def righe_ordine(self, oid: int) -> Optional[list[dict]]:
         if oid not in self._cache_righe:
             self._carica(oid)
-        return self._cache_righe.get(oid)
+        righe = self._cache_righe.get(oid)
+        if righe is None or oid in self._con_quantita:
+            return righe
+        try:
+            evaso = self._quantita(self._cache_ordini[oid])
+        except EsolverError as e:
+            if e.status == 503:  # accesso mancante: va segnalato
+                raise
+            log.warning("Quantità evase non disponibili per l'ordine %s: %s", oid, e)
+            return [applica_quantita(r, None) for r in righe]
+        righe = [applica_quantita(r, evaso.get(r["id_riga"])) for r in righe]
+        self._cache_righe[oid] = righe
+        self._con_quantita.add(oid)
+        return righe
+
+    def _quantita(self, o: dict) -> dict[int, dict]:
+        """Righe DOCVEN dell'ordine. Il report non filtra per IdDocumento: si usano cliente e data."""
+        giorno = date.fromisoformat(o["data_reg"]).strftime("%d%m%Y")
+        righe = self._righe_docven([
+            {"Name": "TipoMovimento", "Operators": 11, "Values": [TIPO_MOVIMENTO_ORDINE]},
+            {"Name": "CliForCod", "Operators": 11, "Values": [o["cod_cliente"]]},
+            {"Name": "DataRegistraz", "Operators": 3, "Values": [giorno, giorno]},
+        ])
+        return {r["IdRigaDoc"]: r for r in righe if r.get("IdDocumento") == o["id"]}
 
     def _carica(self, oid: int):
         for raw in self._chiama({"ElencoIdDocumento": str(oid)}):
-            self._cache_ordini[oid] = map_ordine(raw)
-            self._cache_righe[oid] = [map_riga(r) for r in raw.get("Righe") or []]
+            if raw["IdDocumento"] == oid:
+                self._memorizza(raw)
+
+
+def documenti_nuovi(d: dict, visti: set[int]) -> list[dict]:
+    """Controlla l'esito di LeggiElenco e restituisce gli ordini non ancora visti.
+
+    NumeroDocumenti conta la pagina, non il totale: si prosegue finché arrivano ordini nuovi.
+    """
+    risposta = (d.get("Risposta") if isinstance(d, dict) else None) or {}
+    if risposta.get("Esito") != 1:
+        errori = [str(e.get("MSG")) if isinstance(e, dict) else str(e) for e in risposta.get("Errori") or []]
+        raise EsolverError("eSolver: " + ("; ".join(errori) or "risposta inattesa"))
+    nuovi = []
+    for o in d.get("Dati") or []:
+        if o["IdDocumento"] not in visti:
+            visti.add(o["IdDocumento"])
+            nuovi.append(o)
+    return nuovi
+
+
+# ----------------------------------------------------------------- comandi
+
+def main(argv: list[str]) -> int:
+    load_dotenv()
+    comando = argv[0] if argv else ""
+    if comando == "cifra":
+        print(hashlib.sha256(getpass.getpass("Password: ").encode("utf-8")).hexdigest())
+        return 0
+    if comando != "test":
+        print(__doc__)
+        return 2
+    repo = EsolverRepository()
+    try:
+        repo.rest.accedi()
+        print(f"Accesso riuscito (gruppo {repo.rest.group}).")
+        oggi = date.today()
+        ordini = repo.lista_ordini(reg_da=oggi - timedelta(days=7), reg_a=oggi)
+        print(f"Ordini degli ultimi 7 giorni: {len(ordini)}")
+        if ordini:
+            trovate = repo._quantita(ordini[0])
+            print(f"Report {DOCVEN}: {len(trovate)} righe per l'ordine {ordini[0]['id']}")
+    except EsolverError as e:
+        print(f"Errore: {e}")
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
