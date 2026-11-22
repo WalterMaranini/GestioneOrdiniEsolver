@@ -270,11 +270,11 @@ class McpRepository(EsolverRepository):
                 dati += nuovi
         return self.mcp.esegui(leggi)
 
-    def _righe_docven(self, filtri: list[dict]) -> list[dict]:
+    def _righe_report(self, nome: str, filtri: list[dict]) -> list[dict]:
         async def leggi(client):
             righe = []
             while True:
-                d = await self.mcp.chiama(client, DOCVEN, {
+                d = await self.mcp.chiama(client, nome, {
                     "X-BC-GROUP": self.group, "Filters": filtri, "Digits": [],
                     "Skip": len(righe), "Take": self.PAGE_DOCVEN})
                 pagina = d.get("result") or []

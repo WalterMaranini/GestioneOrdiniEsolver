@@ -9,7 +9,9 @@ GestioneOrdiniEsolver/
   app/
     main.py            # API FastAPI + pagina
     esolver.py         # servizi REST di eSolver (token, ordini, quantità) e mappatura dei campi
+    dettaglio.py       # dati delle schede del singolo ordine, con le descrizioni dai report
     static/index.html  # interfaccia (ribbon, viste, filtri, griglia testata + righe)
+    static/dettaglio.* # maschera di dettaglio dell'ordine (schede Generali, Condizioni, Logistica, Righe)
     esolver_mcp.py     # alternativa: lettura dal server MCP ES_VENDITE (login OAuth, sola lettura)
     static/snapshot.json # fotografia di ordini reali: NON è nel repository (vedi sotto)
 ```
@@ -52,7 +54,7 @@ Apri: http://127.0.0.1:8000/?ditta=WM&ragsoc=DITTA%20DEMO&utente=UTENTE
 - Viste nell'albero (Recenti, Da confermare, Da saldare)
 - Griglia testate: intestazioni a due livelli, ordinamento al clic, riga filtro per colonna, frecce su/giù
 - Selezionando un ordine si caricano le righe (`/api/ordini/{id}/righe`)
-- Doppio clic / F7 / "Dettaglio": scheda dell'ordine; F11 aggiorna; F5 stampa
+- Doppio clic / F7 / "Dettaglio": maschera dell'ordine in sola lettura (F1 per tornare); F11 aggiorna; F5 stampa
 - Esportazione CSV per Excel, zoom griglie, splitter ridimensionabile, pannelli richiudibili
 - Le altre voci del ribbon mostrano un avviso "da collegare al servizio ERP"
 
@@ -61,12 +63,16 @@ Apri: http://127.0.0.1:8000/?ditta=WM&ragsoc=DITTA%20DEMO&utente=UTENTE
 |---|---|---|
 | GET | `/api/ordini` | elenco con filtri: `reg_da, reg_a, doc_da, doc_a, num_da, num_a, num_doc, intestatario, saldato (Si/No/Tutti), vista` |
 | GET | `/api/ordini/{id}` | testata ordine |
+| GET | `/api/ordini/{id}/dettaglio` | dati delle schede dell'ordine |
 | GET | `/api/ordini/{id}/righe` | righe ordine |
 | GET | `/docs` | documentazione interattiva (Swagger) |
 
 ## Note sul servizio eSolver
 - L'elenco viene dal report DOCVEN_MCP (circa 2 s). Le colonne che il report non espone restano vuote:
-  comune, frazione, stato, destinatario e, nella scheda, confermato, numero righe e totale.
+  comune, frazione, stato, destinatario.
+- Il dettaglio viene da LeggiElenco; le descrizioni da TIPIDOC, CONDPAGELENCO, CLIENTIELENCO, CLIENTIINDIRIZZI,
+  AGENTIELENCO e, per zona e capo area, DOCVEN (`_MCP`). Restano vuoti i campi che nessuno espone (rif. commessa, contatto, IBAN,
+  rif. banca estera, e-mail, intestatario DDT, priorità, tipo evasione) e senza descrizione divisione, centro, stato, valuta.
 - **Il report non contiene tutti gli ordini**: mancano anche alcuni definitivi (4 su 58 nel periodo
   24/10-22/11/2026, causa da chiarire), che quindi non compaiono nell'elenco.
 - "Saldato" vale Sì se lo sono tutte le righe presenti nel report: può differire dal filtro di eSolver.

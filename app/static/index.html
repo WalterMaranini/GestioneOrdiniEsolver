@@ -144,6 +144,7 @@ table.grid input[type=checkbox]{margin:0;width:11px;height:11px;vertical-align:m
 .toast{position:fixed;bottom:34px;right:20px;background:#2b3e6b;color:#fff;padding:8px 14px;font-size:12px;border-radius:2px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:60;max-width:380px}
 .toast.on{opacity:.95}
 </style>
+<link rel="stylesheet" href="/static/dettaglio.css">
 </head>
 <body>
 
@@ -182,7 +183,7 @@ table.grid input[type=checkbox]{margin:0;width:11px;height:11px;vertical-align:m
   <div class="win"><span>–</span><span>❐</span><span class="x" onclick="toast('Chiusura gestita dal launcher')">✕</span></div>
 </div>
 
-<div class="menutabs">
+<div class="menutabs solo-elenco">
   <div class="tab sel">AZIONI</div><div class="tab">FIRMA E VALIDAZIONE</div><div class="tab">GSPED</div>
   <div class="tab">DATA MIGRATOR</div><div class="tab">CARTELLE</div><div class="tab">UTILITA'</div>
   <div class="tab">CONFIGURAZIONE</div><div class="tab">HELP</div>
@@ -190,7 +191,7 @@ table.grid input[type=checkbox]{margin:0;width:11px;height:11px;vertical-align:m
   <div class="collapse">▲</div>
 </div>
 
-<div class="ribbon">
+<div class="ribbon solo-elenco">
   <div class="rgroup"><div class="rbody"><div class="rcol">
     <div class="rsmall" data-act="nuovo"><svg><use href="#i-new"/></svg>Nuovo (F4)</div>
     <div class="rsmall" data-act="duplica"><svg><use href="#i-dup"/></svg>Duplica (Q)</div>
@@ -269,9 +270,9 @@ table.grid input[type=checkbox]{margin:0;width:11px;height:11px;vertical-align:m
   </div><div class="rlabel">&nbsp;</div></div>
 </div>
 
-<div class="pagetitle">Elenco ordini di vendita</div>
+<div class="pagetitle solo-elenco">Elenco ordini di vendita</div>
 
-<div class="main">
+<div class="main solo-elenco">
   <div class="left" id="left">
     <div class="ptitle"><span>Gestione Viste/Cartelle</span><span class="tg" id="leftToggle">‹</span></div>
     <div class="tree" id="tree"></div>
@@ -320,6 +321,9 @@ table.grid input[type=checkbox]{margin:0;width:11px;height:11px;vertical-align:m
     </div>
   </div>
 </div>
+
+<!-- dettaglio ordine: riempito da dettaglio.js -->
+<div id="dett"></div>
 
 <div class="status"><span id="stVer">EG100A (x64)</span><span class="sep">|</span><span id="stUser">UTENTE</span><span class="sep">|</span><span id="stDitta">WM/99/99</span></div>
 
@@ -594,6 +598,8 @@ const master = new Grid(document.getElementById('gMaster'), masterCols, {
 
 function openDettaglio(o){
   if (!o) return toast('Selezionare un documento');
+  if (!OFFLINE && window.Dettaglio) return Dettaglio.apri(o);
+  // senza backend resta la scheda riassuntiva
   openModal(`Ordine di vendita ${o.riferimento}`, [
     ['ID documento', o.id], ['Data registrazione', fmtDate(o.data_reg)], ['Riferimento', o.riferimento],
     ['Cliente', `${o.cod_cliente} - ${o.ragione_sociale}`], ['Località', [o.comune+(o.frazione?' ('+o.frazione+')':''), o.provincia, o.stato].filter(Boolean).join(' - ')],
@@ -683,5 +689,6 @@ document.addEventListener('keydown', e => {
 
 loadOrdini();
 </script>
+<script src="/static/dettaglio.js"></script>
 </body>
 </html>

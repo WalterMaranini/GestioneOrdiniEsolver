@@ -12,7 +12,7 @@ Servizi usati, tutti di sola lettura:
 - /report/App-{AppId}/RunReport/DOCVEN_MCP  elenco degli ordini, quantità consegnate e residue. È veloce ma
   non contiene tutti gli ordini (mancano anche alcuni definitivi) né tutte le colonne: quelle che non
   espone restano vuote, e dove manca la riga le quantità restano vuote (None), non 0.
-- /api/ES_ORV/App-{AppId}/LeggiElenco       righe dell'ordine selezionato e vista "Da confermare" (il report
+- /api/ES_ORV/App-{AppId}/LeggiElenco       righe e dettaglio dell'ordine selezionato, vista "Da confermare" (il report
   non espone la conferma). Completo, ma impiega circa 1 s per ordine.
 
 Configurazione tramite variabili d'ambiente o file .env nella cartella del progetto (vedi .env.example):
@@ -204,6 +204,9 @@ class SnapshotRepository:
     def ordine(self, oid: int) -> Optional[dict]:
         return next((o for o in self._ordini if o["id"] == oid), None)
 
+    def dettaglio(self, oid: int) -> Optional[dict]:
+        raise EsolverError("Il dettaglio dell'ordine non è disponibile con i dati dello snapshot")
+
     def righe_ordine(self, oid: int) -> Optional[list[dict]]:
         return self._righe.get(oid)
 
@@ -296,6 +299,7 @@ class EsolverRepository:
     def _azzera(self):
         self._cache_righe: dict[int, list[dict]] = {}
         self._cache_ordini: dict[int, dict] = {}
+        self._cache_testate: dict[int, dict] = {}  # documenti grezzi senza le righe
         self._con_quantita: set[int] = set()
 
     def _chiama(self, payload: dict) -> list[dict]:
@@ -309,12 +313,12 @@ class EsolverRepository:
                 return dati
             dati += nuovi
 
-    def _righe_docven(self, filtri: list[dict]) -> list[dict]:
+    def _righe_report(self, nome: str, filtri: list[dict]) -> list[dict]:
         # Take 0 = tutte le righe: senza un ordinamento garantito le pagine potrebbero ripetersi
-        d = self.rest.report(DOCVEN, {"Skip": 0, "Take": 0, "Filters": filtri, "Digits": []})
+        d = self.rest.report(nome, {"Skip": 0, "Take": 0, "Filters": filtri, "Digits": []})
         righe = d.get("result") if isinstance(d, dict) else d
         if not isinstance(righe, list):
-            raise EsolverError(f"{DOCVEN}: risposta inattesa")
+            raise EsolverError(f"{nome}: risposta inattesa")
         return righe
 
     def lista_ordini(self, **filtri) -> list[dict]:
@@ -336,7 +340,7 @@ class EsolverRepository:
             filtri.append({"Name": "CliForCod", "Operators": 11, "Values": [intestatario.strip()]})
         # il saldato non si filtra nel report: lavora per riga e falserebbe lo stato dell'ordine
         per_ordine: dict[int, list[dict]] = {}
-        for r in self._righe_docven(filtri):
+        for r in self._righe_report(DOCVEN, filtri):
             per_ordine.setdefault(r["IdDocumento"], []).append(r)
         self._azzera()  # le righe degli ordini vanno rilette dopo ogni aggiornamento dell'elenco
         return filtra([map_report(r) for r in per_ordine.values()],
@@ -366,6 +370,7 @@ class EsolverRepository:
         o = map_ordine(raw)
         self._con_quantita.discard(o["id"])
         self._cache_ordini[o["id"]] = o
+        self._cache_testate[o["id"]] = {k: v for k, v in raw.items() if k != "Righe"}
         self._cache_righe[o["id"]] = [map_riga(r) for r in raw.get("Righe") or []]
         return o
 
@@ -373,6 +378,17 @@ class EsolverRepository:
         if oid not in self._cache_ordini:
             self._carica(oid)
         return self._cache_ordini.get(oid)
+
+    def dettaglio(self, oid: int) -> Optional[dict]:
+        """Dati delle schede dell'ordine, con le descrizioni e gli eventuali avvisi."""
+        from .dettaglio import leggi_descrizioni, map_dettaglio
+        if oid not in self._cache_testate:
+            self._carica(oid)
+        raw = self._cache_testate.get(oid)
+        if raw is None:
+            return None
+        descrizioni, avvisi = leggi_descrizioni(raw, self._righe_report)
+        return {**map_dettaglio(raw, descrizioni), "avvisi": avvisi}
 
     def righe_ordine(self, oid: int) -> Optional[list[dict]]:
         if oid not in self._cache_righe:
@@ -396,7 +412,7 @@ class EsolverRepository:
     def _quantita(self, o: dict) -> dict[int, dict]:
         """Righe DOCVEN dell'ordine. Il report non filtra per IdDocumento: si usano cliente e data."""
         giorno = date.fromisoformat(o["data_reg"]).strftime("%d%m%Y")
-        righe = self._righe_docven([
+        righe = self._righe_report(DOCVEN, [
             {"Name": "TipoMovimento", "Operators": 11, "Values": [TIPO_MOVIMENTO_ORDINE]},
             {"Name": "CliForCod", "Operators": 11, "Values": [o["cod_cliente"]]},
             {"Name": "DataRegistraz", "Operators": 3, "Values": [giorno, giorno]},

@@ -82,6 +82,14 @@ def dettaglio_ordine(oid: int):
     return o
 
 
+@app.get("/api/ordini/{oid}/dettaglio")
+def schede_ordine(oid: int):
+    d = repo.dettaglio(oid)
+    if d is None:
+        raise HTTPException(404, "Ordine non trovato")
+    return d
+
+
 @app.get("/api/ordini/{oid}/righe")
 def righe_ordine(oid: int):
     r = repo.righe_ordine(oid)
