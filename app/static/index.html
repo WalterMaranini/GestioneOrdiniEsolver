@@ -125,6 +125,13 @@ table.grid input[type=checkbox]{margin:0;width:11px;height:11px;vertical-align:m
 .status{height:22px;flex:none;display:flex;align-items:center;justify-content:flex-end;gap:10px;padding:0 30px;font-size:12px;background:var(--sfondo)}
 .status .sep{color:#555}
 
+/* attesa durante il caricamento */
+.panel{position:relative}
+.attesa{position:absolute;inset:0;background:rgba(255,255,255,.7);display:none;align-items:center;justify-content:center;gap:10px;font-size:13px;color:var(--blu);z-index:20;cursor:progress}
+.attesa.on{display:flex}
+.attesa i{width:18px;height:18px;border:3px solid var(--bordo2);border-top-color:var(--blu);border-radius:50%;animation:gira .9s linear infinite}
+@keyframes gira{to{transform:rotate(360deg)}}
+
 /* modale e toast */
 .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.25);display:none;align-items:center;justify-content:center;z-index:50}
 .modal{background:#fff;border:1px solid var(--blu);min-width:520px;box-shadow:0 8px 30px rgba(0,0,0,.3)}
@@ -377,15 +384,15 @@ const DEMO = (() => {
   return { lista, righe: id => righe[id] || [] };
 })();
 
-async function api(path, params){
+async function api(path, params, signal){
   if (!OFFLINE) {
     // Con il backend attivo un errore va mostrato: mai sostituire i dati reali con quelli di esempio.
     try {
       const u = new URL(path, location.href);
       if (params) Object.entries(params).forEach(([k,v]) => { if (v!=='' && v!=null) u.searchParams.set(k,v); });
-      const r = await fetch(u); if (!r.ok) { const d = await r.json().then(j=>j.detail, ()=>null); throw new Error(typeof d==='string' ? d : `Richiesta non valida (HTTP ${r.status})`); }
+      const r = await fetch(u, {signal}); if (!r.ok) { const d = await r.json().then(j=>j.detail, ()=>null); throw new Error(typeof d==='string' ? d : `Richiesta non valida (HTTP ${r.status})`); }
       return await r.json();
-    } catch(e) { toast(e instanceof TypeError ? 'Backend non raggiungibile' : e.message); return null; }
+    } catch(e) { if (signal?.aborted) return null; toast(e instanceof TypeError ? 'Backend non raggiungibile' : e.message); return null; }
   }
   const snap = await loadSnapshot();
   if (snap) {
@@ -539,16 +546,45 @@ const detailCols = [
   {key:'importo', label:'Importo', w:100, cls:'r', fmt:v=>fmtNum(v)},
 ];
 
+/* ---------------- caricamento dei pannelli ---------------- */
+// Mostra l'attesa sul pannello e tiene valida solo l'ultima richiesta: una risposta lenta
+// di una ricerca precedente non può sovrascrivere quella attuale.
+class Caricamento {
+  constructor(panel, testo){
+    this.testo = testo;
+    this.el = document.createElement('div'); this.el.className = 'attesa'; this.el.setAttribute('role','status');
+    this.el.innerHTML = '<i></i><span></span>';
+    panel.appendChild(this.el);
+  }
+  // undefined = richiesta superata da una più recente, null = errore già segnalato
+  async esegui(path, params){
+    this.annulla();
+    const c = this.ctrl = new AbortController();
+    this.mostra();
+    const dati = await api(path, params, c.signal);
+    if (this.ctrl !== c) return undefined;
+    this.ctrl = null; this.nascondi();
+    return dati;
+  }
+  annulla(){ this.ctrl?.abort(); this.ctrl = null; this.nascondi(); }
+  mostra(){
+    const t0 = Date.now(), span = this.el.lastChild;
+    const scrivi = () => { const s = Math.round((Date.now()-t0)/1000); span.textContent = this.testo + (s>=2 ? ` ${s} s` : ''); };
+    scrivi(); this._t = setInterval(scrivi, 1000);
+    this._d = setTimeout(() => this.el.classList.add('on'), 150);  // niente lampeggio se la risposta è immediata
+  }
+  nascondi(){ clearInterval(this._t); clearTimeout(this._d); this.el.classList.remove('on'); }
+}
+
 /* ---------------- logica maschera ---------------- */
 const detTitle = document.getElementById('detTitle');
 const detail = new Grid(document.getElementById('gDetail'), detailCols, {countEl:document.getElementById('cntDetail')});
-let loadSeq = 0;
+const caricaRighe = new Caricamento(document.getElementById('gDetail').closest('.panel'), 'Caricamento righe…');
 async function loadRighe(o){
-  const seq = ++loadSeq;
-  if (!o) { detTitle.textContent = 'Dettaglio righe documento'; detail.setRows([]); return; }
+  if (!o) { caricaRighe.annulla(); detTitle.textContent = 'Dettaglio righe documento'; detail.setRows([]); return; }
   detTitle.textContent = `Dettaglio righe documento - ODV ${o.riferimento.split('.').pop()} del ${fmtDate(o.data_reg)}`;
-  const r = await api(`/api/ordini/${o.id}/righe`);
-  if (seq === loadSeq) detail.setRows(r || []);
+  const r = await caricaRighe.esegui(`/api/ordini/${o.id}/righe`);
+  if (r !== undefined) detail.setRows(r || []);
 }
 const master = new Grid(document.getElementById('gMaster'), masterCols, {
   countEl: document.getElementById('cntMaster'),
@@ -560,8 +596,8 @@ function openDettaglio(o){
   if (!o) return toast('Selezionare un documento');
   openModal(`Ordine di vendita ${o.riferimento}`, [
     ['ID documento', o.id], ['Data registrazione', fmtDate(o.data_reg)], ['Riferimento', o.riferimento],
-    ['Cliente', `${o.cod_cliente} - ${o.ragione_sociale}`], ['Località', `${o.comune}${o.frazione?' ('+o.frazione+')':''} - ${o.provincia} - ${o.stato}`],
-    ['Esercizio', o.esercizio], ['Totale righe', o.totale!=null ? fmtNum(o.totale)+' EUR' : ''], ['Confermato', o.confermato?'Sì':'No'], ['Saldato', o.saldato?'Sì':'No'], ['Numero righe', o.n_righe],
+    ['Cliente', `${o.cod_cliente} - ${o.ragione_sociale}`], ['Località', [o.comune+(o.frazione?' ('+o.frazione+')':''), o.provincia, o.stato].filter(Boolean).join(' - ')],
+    ['Esercizio', o.esercizio], ['Totale righe', o.totale!=null ? fmtNum(o.totale)+' EUR' : ''], ['Confermato', o.confermato==null ? '' : o.confermato?'Sì':'No'], ['Saldato', o.saldato?'Sì':'No'], ['Numero righe', o.n_righe],
   ]);
 }
 
@@ -570,10 +606,12 @@ let vista = 'recenti';
 // oggi (data locale del PC) più o meno i giorni indicati, in formato ISO
 function isoOffset(days){ const t = new Date(); return new Date(Date.UTC(t.getFullYear(), t.getMonth(), t.getDate()+days)).toISOString().slice(0,10); }
 form.reg_da.value = isoOffset(-29); form.reg_a.value = isoOffset(0);
+const caricaOrdini = new Caricamento(document.getElementById('masterPanel'), 'Caricamento ordini…');
 async function loadOrdini(){
   const p = Object.fromEntries(new FormData(form)); delete p.tipo_int; p.vista = vista;
+  const rows = await caricaOrdini.esegui('/api/ordini', p);
+  if (rows === undefined) return false;
   const sel = master.current()?.id;
-  const rows = await api('/api/ordini', p);
   master.setRows(rows || []);
   if (!rows) return false;
   if (sel) { const i = master.view.findIndex(r=>r.id===sel); if (i>0) master.select(i); }

@@ -247,7 +247,9 @@ class McpEsolver:
 # ----------------------------------------------------------------- repository
 
 class McpRepository(EsolverRepository):
-    """Come EsolverRepository, ma passa dal server MCP."""
+    """Come EsolverRepository, ma passa dal server MCP e legge l'elenco dal servizio ordini."""
+
+    ELENCO_DA_REPORT = False
 
     PAGE = 10
     PAGE_DOCVEN = 200

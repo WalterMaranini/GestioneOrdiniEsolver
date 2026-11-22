@@ -2,16 +2,18 @@
 Collegamento diretto ai servizi REST di eSolver (swagger: https://apiesolver.sistemi.com/swagger/ui/index).
 
 Contiene:
-- map_ordine / map_riga: traducono la risposta di eSolver nei campi usati dalla maschera
+- map_ordine / map_riga / map_report: traducono la risposta di eSolver nei campi usati dalla maschera
 - EsolverRest: client REST (token, gruppo, errori)
 - EsolverRepository: legge gli ordini in tempo reale
 - SnapshotRepository: legge una fotografia dei dati salvata in JSON (utile per demo e test)
 
 Servizi usati, tutti di sola lettura:
 - /auth/App-{AppId}/Token                   token di accesso, richiesto di nuovo quando scade
-- /api/ES_ORV/App-{AppId}/LeggiElenco       testata e righe degli ordini
-- /report/App-{AppId}/RunReport/DOCVEN_MCP  quantità consegnate e residue. Non contiene tutti gli ordini
-  (esclude i provvisori): dove la riga manca le quantità restano vuote (None), non 0.
+- /report/App-{AppId}/RunReport/DOCVEN_MCP  elenco degli ordini, quantità consegnate e residue. È veloce ma
+  non contiene tutti gli ordini (mancano anche alcuni definitivi) né tutte le colonne: quelle che non
+  espone restano vuote, e dove manca la riga le quantità restano vuote (None), non 0.
+- /api/ES_ORV/App-{AppId}/LeggiElenco       righe dell'ordine selezionato e vista "Da confermare" (il report
+  non espone la conferma). Completo, ma impiega circa 1 s per ordine.
 
 Configurazione tramite variabili d'ambiente o file .env nella cartella del progetto (vedi .env.example):
     ESOLVER_USER              utente eSolver
@@ -118,6 +120,35 @@ def map_ordine(o: dict) -> dict:
         "confermato": bool(o.get("OrdineConfermato")),
         "n_righe": len(righe),
         "totale": round(sum(float(r.get("ImportoValuta") or 0) for r in righe), 2),
+    }
+
+
+def map_report(righe: list[dict]) -> dict:
+    """Testata dell'ordine dalle sue righe nel report DOCVEN; ciò che il report non espone resta vuoto."""
+    r = righe[0]
+    data_reg = _data(r.get("DataRegistraz"))
+    esercizio = r.get("EsercizioContabile")
+    return {
+        "id": r["IdDocumento"],
+        "num_reg": r.get("NumRegistraz"),
+        "data_reg": data_reg,
+        # come in map_ordine: il sezionale "1" è un'ipotesi
+        "riferimento": f"{data_reg[:4]}.1.{r.get('NumRegistraz')}" if data_reg else "",
+        "num_doc": r.get("NumDocumento") or "",
+        "data_doc": _data(r.get("DataDoc")),
+        "cod_cliente": str(r.get("CliForCod") or ""),
+        "ragione_sociale": r.get("RagSocCompleta") or "",
+        "comune": "",
+        "frazione": "",
+        "provincia": r.get("CliForProv") or "",
+        "stato": "",
+        "esercizio": int(esercizio) if esercizio else None,
+        "destinatario": "",
+        "saldato": all(x.get("DesFlussoSaldato") == "Si" for x in righe),
+        "confermato": None,
+        # non esposti, e non ricavabili: in alcuni ordini il report non contiene tutte le righe
+        "n_righe": None,
+        "totale": None,
     }
 
 
@@ -256,6 +287,7 @@ class EsolverRepository:
     """Legge gli ordini in tempo reale dai servizi REST."""
 
     PAGE = 20
+    ELENCO_DA_REPORT = True
 
     def __init__(self, rest: EsolverRest | None = None):
         self.rest = rest or EsolverRest()
@@ -285,10 +317,35 @@ class EsolverRepository:
             raise EsolverError(f"{DOCVEN}: risposta inattesa")
         return righe
 
-    def lista_ordini(self, reg_da: Optional[date] = None, reg_a: Optional[date] = None,
-                     num_da: Optional[int] = None, num_a: Optional[int] = None,
-                     intestatario: str = "", saldato: str = "Tutti", vista: str = "recenti",
-                     **altri) -> list[dict]:
+    def lista_ordini(self, **filtri) -> list[dict]:
+        # il report non espone la conferma: quella vista si legge dal servizio
+        if self.ELENCO_DA_REPORT and filtri.get("vista") != "da_confermare":
+            return self._lista_report(**filtri)
+        return self._lista_servizio(**filtri)
+
+    def _lista_report(self, reg_da: Optional[date] = None, reg_a: Optional[date] = None,
+                      intestatario: str = "", **altri) -> list[dict]:
+        filtri = [
+            {"Name": "TipoMovimento", "Operators": 11, "Values": [TIPO_MOVIMENTO_ORDINE]},
+            {"Name": "DesTipoAnagrafica", "Operators": 11, "Values": ["CLIENTE"]},
+            {"Name": "DataRegistraz", "Operators": 3, "Values": [
+                reg_da.strftime("%d%m%Y") if reg_da else "01011800",
+                reg_a.strftime("%d%m%Y") if reg_a else "31122099"]},
+        ]
+        if intestatario.strip().isdigit():
+            filtri.append({"Name": "CliForCod", "Operators": 11, "Values": [intestatario.strip()]})
+        # il saldato non si filtra nel report: lavora per riga e falserebbe lo stato dell'ordine
+        per_ordine: dict[int, list[dict]] = {}
+        for r in self._righe_docven(filtri):
+            per_ordine.setdefault(r["IdDocumento"], []).append(r)
+        self._azzera()  # le righe degli ordini vanno rilette dopo ogni aggiornamento dell'elenco
+        return filtra([map_report(r) for r in per_ordine.values()],
+                      reg_da=reg_da, reg_a=reg_a, intestatario=intestatario, **altri)
+
+    def _lista_servizio(self, reg_da: Optional[date] = None, reg_a: Optional[date] = None,
+                        num_da: Optional[int] = None, num_a: Optional[int] = None,
+                        intestatario: str = "", saldato: str = "Tutti", vista: str = "recenti",
+                        **altri) -> list[dict]:
         payload: dict = {"TipoAnagrafica": 1}
         if reg_da: payload["DataRegistrazioneDa"] = reg_da.isoformat()
         if reg_a: payload["DataRegistrazioneA"] = reg_a.isoformat()
@@ -320,11 +377,12 @@ class EsolverRepository:
     def righe_ordine(self, oid: int) -> Optional[list[dict]]:
         if oid not in self._cache_righe:
             self._carica(oid)
-        righe = self._cache_righe.get(oid)
-        if righe is None or oid in self._con_quantita:
+        righe, ordine = self._cache_righe.get(oid), self._cache_ordini.get(oid)
+        # ordine None: un altro aggiornamento dell'elenco ha appena svuotato la cache
+        if righe is None or ordine is None or oid in self._con_quantita:
             return righe
         try:
-            evaso = self._quantita(self._cache_ordini[oid])
+            evaso = self._quantita(ordine)
         except EsolverError as e:
             if e.status == 503:  # accesso mancante: va segnalato
                 raise

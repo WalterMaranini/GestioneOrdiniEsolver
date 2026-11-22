@@ -65,9 +65,14 @@ Apri: http://127.0.0.1:8000/?ditta=WM&ragsoc=DITTA%20DEMO&utente=UTENTE
 | GET | `/docs` | documentazione interattiva (Swagger) |
 
 ## Note sul servizio eSolver
-- LeggiElenco restituisce testata **e righe complete** (~260 KB per ordine): l'elenco
-  carica tutto in una volta e le righe vengono servite dalla cache, senza nuove chiamate.
-  Con molti ordini conviene usare per l'elenco il report DOCVEN_MCP e il servizio solo per il dettaglio.
-- Il servizio non riporta le quantità evase/consegnate: si leggono dal report DOCVEN_MCP quando si apre
-  un ordine. Il report non contiene tutti gli ordini (esclude i provvisori): dove manca la cella resta vuota.
+- L'elenco viene dal report DOCVEN_MCP (circa 2 s). Le colonne che il report non espone restano vuote:
+  comune, frazione, stato, destinatario e, nella scheda, confermato, numero righe e totale.
+- **Il report non contiene tutti gli ordini**: mancano anche alcuni definitivi (4 su 58 nel periodo
+  24/10-22/11/2026, causa da chiarire), che quindi non compaiono nell'elenco.
+- "Saldato" vale Sì se lo sono tutte le righe presenti nel report: può differire dal filtro di eSolver.
+- La vista "Da confermare" usa LeggiElenco, perché il report non espone la conferma: è completa ma impiega
+  circa 1 s per ordine, dato che il servizio restituisce anche tutte le righe.
+- Le righe dell'ordine selezionato vengono da LeggiElenco, che non riporta le quantità consegnate e residue:
+  si aggiungono dal report; dove la riga manca la cella resta vuota.
+- Queste note valgono per `ERP_DATA=esolver`: con `mcp` l'elenco viene sempre da LeggiElenco.
 - Il "Riferimento" è ricostruito come anno.1.numero registrazione: il "1" centrale è un'ipotesi da verificare.
