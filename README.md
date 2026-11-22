@@ -4,13 +4,14 @@ Riproduzione della maschera "Elenco ordini di vendita" dell'ERP, servita da un b
 
 ## Struttura
 ```
-erp_ordini/
+GestioneOrdiniEsolver/
   requirements.txt
   app/
     main.py            # API FastAPI + pagina
     esolver.py         # collegamento a eSolver (ES_SRV_ORVLeggiElenco) e mappatura dei campi
     static/index.html  # interfaccia (ribbon, viste, filtri, griglia testata + righe)
-    static/snapshot.json # fotografia dei 58 ordini reali del gruppo WM (24/10-22/11/2026)
+    esolver_mcp.py     # lettura dal server MCP ES_VENDITE (login OAuth, sola lettura)
+    static/snapshot.json # fotografia di ordini reali: NON è nel repository (vedi sotto)
 ```
 
 ## Avvio
@@ -22,7 +23,15 @@ venv\Scripts\uvicorn app.main:app --host 127.0.0.1 --port 8000
 Apri: http://127.0.0.1:8000/?ditta=WM&ragsoc=RISIKO%20SPA&utente=MARANINI
 
 ### Sorgente dati
-- default: `snapshot.json`, cioè gli ordini reali letti da eSolver il 22/11/2026
+- default: `app/static/snapshot.json`, una fotografia di ordini letti da eSolver.
+  **Il file contiene dati reali ed è escluso da git**: dopo un clone non c'è e l'app con la sorgente
+  predefinita non parte (`FileNotFoundError`). Le alternative sono:
+  - usare una sorgente in tempo reale (`ERP_DATA=mcp` o `ERP_DATA=esolver`, vedi sotto);
+  - copiare un proprio snapshot in `app/static/snapshot.json`, nel formato
+    `{"ordini": [...], "righe": {"<id ordine>": [...]}}` con i campi prodotti da `map_ordine` e `map_riga`.
+
+  La maschera si apre sugli ultimi 30 giorni: se lo snapshot è più vecchio, allargare il filtro
+  "Data registrazione" per vederne gli ordini.
 - tempo reale: impostare le variabili e avviare con `ERP_DATA=esolver`
   ```
   set ERP_DATA=esolver

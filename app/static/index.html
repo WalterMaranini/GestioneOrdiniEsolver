@@ -567,7 +567,8 @@ function openDettaglio(o){
 
 const form = document.getElementById('filters');
 let vista = 'recenti';
-function isoOffset(days){ const d = new Date(Date.UTC(2026,10,22)); d.setUTCDate(d.getUTCDate()+days); return d.toISOString().slice(0,10); }
+// oggi (data locale del PC) più o meno i giorni indicati, in formato ISO
+function isoOffset(days){ const t = new Date(); return new Date(Date.UTC(t.getFullYear(), t.getMonth(), t.getDate()+days)).toISOString().slice(0,10); }
 form.reg_da.value = isoOffset(-29); form.reg_a.value = isoOffset(0);
 async function loadOrdini(){
   const p = Object.fromEntries(new FormData(form)); delete p.tipo_int; p.vista = vista;
