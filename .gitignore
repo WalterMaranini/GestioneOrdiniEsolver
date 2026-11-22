@@ -1,0 +1,9 @@
+.venv/
+venv/
+__pycache__/
+*.pyc
+.env
+mcp_token.json
+
+# Ordini reali letti da eSolver: non vanno pubblicati
+app/static/snapshot.json
