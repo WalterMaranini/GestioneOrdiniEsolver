@@ -66,6 +66,8 @@ Scadenzario clienti: http://127.0.0.1:8000/scadenzario?ditta=WM&ragsoc=DITTA%20D
 - Le altre voci del ribbon mostrano un avviso "da collegare al servizio ERP"
 
 ### Interrogazione scadenzario clienti (`/scadenzario`)
+- Si apre dal pulsante "Scadenzario cliente" del ribbon dell'elenco ordini, nella stessa scheda e filtrata sul
+  cliente dell'ordine selezionato; "Abbandona" (F1) o Indietro del browser riportano all'elenco
 - Filtri: clienti (codici separati da virgola), numero documento, data scadenza e data documento,
   scadenze aperte (tutte, scadute, non scadute) e/o chiuse, data di riferimento dello scaduto,
   situazione al, insoluti, bloccate. Scorciatoie nel ribbon: "Solo scadute", "In scadenza nel mese"

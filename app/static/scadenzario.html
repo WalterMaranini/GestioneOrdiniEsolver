@@ -45,6 +45,10 @@ table.grid tfoot td:first-child{overflow:visible;z-index:2}
 
 <div class="ribbon">
   <div class="rgroup"><div class="rbody">
+    <div class="rbig" data-act="abbandona" title="Torna all'elenco ordini"><svg><use href="#i-esci"/></svg>Abbandona<br>(F1)</div>
+  </div><div class="rlabel">Navigazione</div></div>
+
+  <div class="rgroup"><div class="rbody">
     <div class="rbig" data-act="dettaglio"><svg><use href="#i-doc"/></svg>Dettaglio<br>(F7)</div>
   </div><div class="rlabel">Gestione</div></div>
 
@@ -239,7 +243,17 @@ function esporta(){
   a.download = 'scadenzario_clienti.csv'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 function fineMese(){ const t = new Date(); return new Date(Date.UTC(t.getFullYear(), t.getMonth()+1, 0)).toISOString().slice(0,10); }
+// aperta dall'elenco ordini: si torna indietro (il browser ripristina la pagina com'era);
+// aperta direttamente: si apre l'elenco ordini con la stessa ditta e lo stesso utente
+function abbandona(){
+  const da = document.referrer && new URL(document.referrer);
+  if (da && da.origin === location.origin && da.pathname === '/' && history.length > 1) return history.back();
+  const u = new URL('/', location.href);
+  Object.entries(CTX).forEach(([k,v]) => u.searchParams.set(k, v));
+  location.assign(u);
+}
 const AZIONI = {
+  abbandona,
   dettaglio: () => dettaglio(),
   aggiorna: () => carica().then(ok => ok && toast('Scadenzario aggiornato')),
   scadute: () => { form.aperte.checked = true; form.tipo_aperte.disabled = false; form.tipo_aperte.value = 'scadute'; form.chiuse.checked = false; carica(); },
@@ -251,7 +265,7 @@ const AZIONI = {
 };
 document.querySelectorAll('[data-act]').forEach(b => b.addEventListener('click', () => AZIONI[b.dataset.act]()));
 document.addEventListener('keydown', e => {
-  const tasti = {F7:'dettaglio', F11:'aggiorna', F5:'stampa'};
+  const tasti = {F1:'abbandona', F7:'dettaglio', F11:'aggiorna', F5:'stampa'};
   if (tasti[e.key]) { e.preventDefault(); AZIONI[tasti[e.key]](); }
   if (e.key==='Escape') closeModal();
 });

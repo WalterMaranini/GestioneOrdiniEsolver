@@ -25,6 +25,7 @@ document.body.insertAdjacentHTML('afterbegin', `<svg width="0" height="0" style=
   <symbol id="i-folder" viewBox="0 0 16 16"><path d="M1 3h5l1 2h8v9H1z" fill="#f2c94c" stroke="#c49b1f"/></symbol>
   <symbol id="i-folderp" viewBox="0 0 16 16"><path d="M1 3h5l1 2h8v9H1z" fill="#f2c94c" stroke="#c49b1f"/><circle cx="5" cy="9" r="2" fill="#3a6fb5"/></symbol>
   <symbol id="i-view" viewBox="0 0 16 16"><path d="M1 2h10l-4 5v5l-2 1V7z" fill="#7d8a99" stroke="#4e5a68"/><rect x="9" y="9" width="6" height="6" fill="#fff" stroke="#4e5a68"/><path d="M10 11h4M10 13h4" stroke="#4e5a68"/></symbol>
+  <symbol id="i-esci" viewBox="0 0 32 32"><path d="M14 4h14v24H14z" fill="#f2c069" stroke="#c79436"/><path d="M18 16H4M9 10l-6 6 6 6" fill="none" stroke="#3a6fb5" stroke-width="3"/></symbol>
   <symbol id="i-scad" viewBox="0 0 32 32"><rect x="3" y="6" width="22" height="20" fill="#fff" stroke="#6b6b6b"/><rect x="3" y="6" width="22" height="5" fill="#c62828"/><path d="M8 3v6M20 3v6" stroke="#555" stroke-width="2"/><path d="M6 15h4M12 15h4M18 15h4M6 19h4M12 19h4" stroke="#9aa" stroke-width="2"/><circle cx="24" cy="23" r="7" fill="#f6c343" stroke="#b88a00"/><text x="24" y="27" font-size="10" text-anchor="middle" fill="#6b4e00" font-family="Arial" font-weight="bold">€</text></symbol>
  </defs>
 </svg>`);

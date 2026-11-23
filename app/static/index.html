@@ -73,7 +73,7 @@
   </div><div class="rlabel">Controlli</div></div>
 
   <div class="rgroup"><div class="rbody">
-    <div class="rbig" data-act="scadenzario" title="Apre lo scadenzario del cliente dell'ordine selezionato (senza selezione: tutti i clienti)" style="min-width:66px"><svg><use href="#i-scad"/></svg>Scadenzario<br>cliente</div>
+    <div class="rbig" data-act="scadenzario" title="Scadenzario del cliente dell'ordine selezionato (senza selezione: tutti i clienti)" style="min-width:66px"><svg><use href="#i-scad"/></svg>Scadenzario<br>cliente</div>
   </div><div class="rlabel">Interrogazioni</div></div>
 
   <div class="rgroup"><div class="rbody">
@@ -401,12 +401,12 @@ const AZIONI = {
   'aggiorna-righe': () => loadRighe(master.current()),
   ripristina: () => { form.reset(); form.reg_da.value=isoOffset(-29); form.reg_a.value=isoOffset(0); form.doc_a.value='2099-12-31'; master.filters={}; master.sort=null; loadOrdini(); },
   stampa: () => window.print(),
-  // in una nuova scheda: l'elenco ordini resta com'è
+  // nella stessa scheda; dallo scadenzario si torna con Abbandona (F1) o con Indietro del browser
   scadenzario: () => {
     const u = new URL('/scadenzario', location.href), o = master.current();
     Object.entries(CTX).forEach(([k,v]) => u.searchParams.set(k, v));
     if (o?.cod_cliente) u.searchParams.set('clienti', o.cod_cliente);
-    window.open(u, '_blank');
+    location.assign(u);
   },
 };
 document.querySelectorAll('[data-act]').forEach(b => b.addEventListener('click', () => {
