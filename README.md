@@ -10,9 +10,12 @@ GestioneOrdiniEsolver/
     main.py            # API FastAPI + pagina
     esolver.py         # servizi REST di eSolver (token, ordini, quantità) e mappatura dei campi
     dettaglio.py       # dati del singolo ordine e della singola riga, con le descrizioni dai report
+    scadenzario.py     # interrogazione scadenzario clienti (servizio ES_PC_SCAD)
+    static/comune.*    # parti comuni alle pagine: stili, icone, griglia, attesa durante il caricamento
     static/index.html  # interfaccia (ribbon, viste, filtri, griglia testata + righe)
     static/dettaglio.* # maschera di dettaglio dell'ordine (schede Generali, Condizioni, Logistica, Righe)
-    static/riga.js     # maschera di dettaglio della riga (scheda Generali)
+    static/riga.js     # maschera di dettaglio della riga (schede Generali e Analitica)
+    static/scadenzario.html # interrogazione scadenzario clienti
     esolver_mcp.py     # alternativa: lettura dal server MCP ES_VENDITE (login OAuth, sola lettura)
     static/snapshot.json # fotografia di ordini reali: NON è nel repository (vedi sotto)
 ```
@@ -24,6 +27,9 @@ py -3.14 -m venv .venv
 .venv\Scripts\uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 Apri: http://127.0.0.1:8000/?ditta=WM&ragsoc=DITTA%20DEMO&utente=UTENTE
+
+Scadenzario clienti: http://127.0.0.1:8000/scadenzario?ditta=WM&ragsoc=DITTA%20DEMO&utente=UTENTE
+(solo con la sorgente `esolver`)
 
 ### Sorgente dati (variabile `ERP_DATA`)
 - `esolver` (default): tempo reale dai servizi REST, senza passare dall'MCP
@@ -59,6 +65,18 @@ Apri: http://127.0.0.1:8000/?ditta=WM&ragsoc=DITTA%20DEMO&utente=UTENTE
 - Esportazione CSV per Excel, zoom griglie, splitter ridimensionabile, pannelli richiudibili
 - Le altre voci del ribbon mostrano un avviso "da collegare al servizio ERP"
 
+### Interrogazione scadenzario clienti (`/scadenzario`)
+- Filtri: clienti (codici separati da virgola), numero documento, data scadenza e data documento,
+  scadenze aperte (tutte, scadute, non scadute) e/o chiuse, data di riferimento dello scaduto,
+  situazione al, insoluti, bloccate. Scorciatoie nel ribbon: "Solo scadute", "In scadenza nel mese"
+- Riepilogo: residuo totale, scaduto per fasce (30/60/90 giorni e oltre), a scadere,
+  acconti e note di credito (residuo negativo), rischio insoluto
+- Griglia con totali; doppio clic / F7 apre la scheda completa della scadenza; F11 aggiorna; F5 stampa; CSV per Excel
+- Ragione sociale e descrizione della condizione di pagamento vengono da CLIENTIELENCO_MCP e CONDPAGELENCO_MCP;
+  il tipo di pagamento resta col codice
+- Solo clienti: il servizio fornitori `ES_PC_SCAD/FornitoreLeggi` risponde HTTP 500 con corpo vuoto
+  ogni volta che ci sono scadenze da restituire (e anche se non si indicano le anagrafiche)
+
 ## API
 | Metodo | URL | Descrizione |
 |---|---|---|
@@ -67,6 +85,7 @@ Apri: http://127.0.0.1:8000/?ditta=WM&ragsoc=DITTA%20DEMO&utente=UTENTE
 | GET | `/api/ordini/{id}/dettaglio` | dati delle schede dell'ordine |
 | GET | `/api/ordini/{id}/righe` | righe ordine (`aggiorna=true` le rilegge da eSolver) |
 | GET | `/api/ordini/{id}/righe/{id_riga}` | dettaglio della singola riga |
+| GET | `/api/scadenzario` | scadenze dei clienti: `aperte, tipo_aperte (tutte/scadute/non_scadute), chiuse, clienti, scad_da, scad_a, doc_da, doc_a, riferimento, situazione, num_doc, insolute, bloccate (tutte/si/no)` |
 | GET | `/docs` | documentazione interattiva (Swagger) |
 
 ## Note sul servizio eSolver

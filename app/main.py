@@ -24,6 +24,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .esolver import EsolverError, EsolverRepository, SnapshotRepository
+from .scadenzario import Scadenzario
 
 STATIC = Path(__file__).parent / "static"
 
@@ -106,6 +107,48 @@ def riga_ordine(oid: int, id_riga: int):
     if r is None:
         raise HTTPException(404, "Riga non trovata")
     return r
+
+
+# ----------------------------------------------------------------- scadenzario clienti
+
+class ScadenzarioNonDisponibile(EsolverError):
+    status = 501
+
+    def __init__(self):
+        super().__init__("Lo scadenzario si legge solo dai servizi REST: avviare con ERP_DATA=esolver")
+
+
+# il server MCP e lo snapshot non espongono il servizio
+scadenzario = Scadenzario(repo) if type(repo) is EsolverRepository else None
+
+
+@app.get("/scadenzario", include_in_schema=False)
+def pagina_scadenzario():
+    return FileResponse(STATIC / "scadenzario.html")
+
+
+@app.get("/api/scadenzario")
+def leggi_scadenzario(
+    aperte: bool = True,
+    tipo_aperte: str = Query("tutte", pattern="^(tutte|scadute|non_scadute)$"),
+    chiuse: bool = False,
+    clienti: str = "",
+    scad_da: Optional[date] = None,
+    scad_a: Optional[date] = None,
+    doc_da: Optional[date] = None,
+    doc_a: Optional[date] = None,
+    riferimento: Optional[date] = None,
+    situazione: Optional[date] = None,
+    num_doc: str = "",
+    insolute: str = Query("tutte", pattern="^(tutte|si|no)$"),
+    bloccate: str = Query("tutte", pattern="^(tutte|si|no)$"),
+):
+    if scadenzario is None:
+        raise ScadenzarioNonDisponibile()
+    return scadenzario.leggi(aperte=aperte, tipo_aperte=tipo_aperte, chiuse=chiuse, clienti=clienti,
+                             scad_da=scad_da, scad_a=scad_a, doc_da=doc_da, doc_a=doc_a,
+                             riferimento=riferimento, situazione=situazione, num_doc=num_doc,
+                             insolute=insolute, bloccate=bloccate)
 
 
 app.mount("/static", StaticFiles(directory=STATIC), name="static")

@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<title>Interrogazione scadenzario</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/static/comune.css">
+<style>
+.filters.fscad{grid-template-columns:150px 30px 112px 18px 112px 30px 160px 30px 112px 18px 112px 20px 80px}
+.filters.fscad label{display:flex;align-items:center;gap:4px;white-space:nowrap}
+.filters.fscad input[type=checkbox]{width:auto;height:auto;margin:0}
+.filters.fscad .span3{grid-column:span 3}
+.filters.fscad .span4{grid-column:span 4}
+.riepilogo{display:flex;flex-wrap:wrap;gap:0;padding:4px 6px;font-size:12px}
+.riepilogo div{padding:2px 14px;border-right:1px solid var(--bordo2);display:flex;flex-direction:column;align-items:flex-end}
+.riepilogo div:last-child{border-right:none}
+.riepilogo b{font-size:14px;font-weight:600;font-variant-numeric:tabular-nums}
+.riepilogo span{color:#555;font-size:11px}
+.riepilogo .scad b{color:#b3261e}
+.stato.scaduta{background:#d9534f;border-color:#a33}
+.stato.chiusa{background:#9aa5b1;border-color:#6d7884}
+.stato.credito{background:#5b8fd9;border-color:#2f5fa8}
+.flag{display:inline-block;min-width:14px;padding:0 2px;font-size:10px;line-height:13px;text-align:center;border:1px solid;margin-right:2px}
+.flag.b{color:#8a5a00;border-color:#d9a400;background:#fff6d6}
+.flag.i{color:#a31515;border-color:#d9534f;background:#fdeaea}
+.flag.n{color:#555;border-color:#999;background:#eee}
+table.grid tfoot td{position:sticky;bottom:0;background:#e7e7e7;border-top:1px solid #b5b5b5;font-weight:700;z-index:1}
+table.grid tfoot td:first-child{overflow:visible;z-index:2}
+@media print{ .ribbon,.menutabs,#filtPanel{display:none} }
+</style>
+</head>
+<body>
+
+<div class="titlebar">
+  <div class="appico"><span></span></div><div class="qat">▾</div>
+  <div class="title" id="wintitle">Interrogazione scadenzario clienti</div>
+  <div class="win"><span>–</span><span>❐</span><span class="x" onclick="toast('Chiusura gestita dal launcher')">✕</span></div>
+</div>
+
+<div class="menutabs">
+  <div class="tab sel">AZIONI</div><div class="tab">HELP</div>
+  <input class="search" placeholder="cerca nel manuale...">
+  <div class="collapse">▲</div>
+</div>
+
+<div class="ribbon">
+  <div class="rgroup"><div class="rbody">
+    <div class="rbig" data-act="dettaglio"><svg><use href="#i-doc"/></svg>Dettaglio<br>(F7)</div>
+  </div><div class="rlabel">Gestione</div></div>
+
+  <div class="rgroup"><div class="rbody">
+    <div class="rbig" data-act="aggiorna"><svg><use href="#i-refresh"/></svg>Aggiorna<br>(F11)</div>
+  </div><div class="rlabel">Aggiorna</div></div>
+
+  <div class="rgroup"><div class="rbody"><div class="rcol">
+    <div class="rsmall" data-act="scadute"><svg><use href="#i-funnel"/></svg>Solo scadute</div>
+    <div class="rsmall" data-act="mese"><svg><use href="#i-funnel"/></svg>In scadenza nel mese</div>
+    <div class="rsmall" data-act="ripristina"><svg><use href="#i-funnel"/></svg>Ripristina (E)</div>
+  </div></div><div class="rlabel">Filtri</div></div>
+
+  <div class="rgroup"><div class="rbody">
+    <div class="rbig" data-act="stampa"><svg><use href="#i-print"/></svg>Stampa<br>(F5)</div>
+    <div class="rbig" data-act="esporta"><svg><use href="#i-excel"/></svg>Esporta<br>in Excel</div>
+  </div><div class="rlabel">Stampe</div></div>
+</div>
+
+<div class="pagetitle">Interrogazione scadenzario clienti</div>
+
+<div class="main">
+  <div class="right">
+    <div class="panel" style="flex:none" id="filtPanel">
+      <div class="ptitle"><span>Filtri rapidi</span><span class="tg" id="filtToggle">⌃</span></div>
+      <form class="filters fscad" id="filters" autocomplete="off">
+        <span>Clienti</span><span></span><input name="clienti" class="span3" placeholder="codici separati da virgola; vuoto = tutti">
+        <span></span><span>Numero documento</span><span></span><input name="num_doc" class="span3"><span></span><span></span>
+
+        <span>Data scadenza</span><span>da</span><input type="date" name="scad_da"><span class="c">a</span><input type="date" name="scad_a">
+        <span></span><span>Data documento</span><span>da</span><input type="date" name="doc_da"><span class="c">a</span><input type="date" name="doc_a"><span></span><span></span>
+
+        <label><input type="checkbox" name="aperte" checked> Scadenze aperte</label><span></span>
+        <select name="tipo_aperte" class="span3"><option value="tutte">Tutte</option><option value="scadute">Solo scadute</option><option value="non_scadute">Solo non scadute</option></select>
+        <span></span><span>Riferimento scaduto al</span><span></span><input type="date" name="riferimento"><span></span><span></span><span></span><span></span>
+
+        <label><input type="checkbox" name="chiuse"> Scadenze chiuse</label><span></span><span class="span3"></span>
+        <span></span><span>Situazione al</span><span></span><input type="date" name="situazione"><span></span><span></span><span></span><span></span>
+
+        <span>Insoluti</span><span></span>
+        <select name="insolute" class="span3"><option value="tutte">Tutte</option><option value="si">Solo con insoluti</option><option value="no">Solo senza insoluti</option></select>
+        <span></span><span>Bloccate</span><span></span>
+        <select name="bloccate" class="span3"><option value="tutte">Tutte</option><option value="si">Solo bloccate</option><option value="no">Solo non bloccate</option></select>
+        <span></span><button type="submit" class="btn">Applica</button>
+      </form>
+    </div>
+
+    <div class="panel" style="flex:none">
+      <div class="ptitle"><span>Riepilogo</span></div>
+      <div class="riepilogo" id="riepilogo"></div>
+    </div>
+
+    <div class="panel" style="flex:1" id="scadPanel">
+      <div class="gtool">
+        <svg data-act="aggiorna"><title>Aggiorna</title><use href="#i-refresh"/></svg>
+        <svg data-act="esporta"><title>Esporta in Excel</title><use href="#i-excel"/></svg>
+        <select class="zoom" aria-label="Zoom"><option>80%</option><option>90%</option><option selected>100%</option><option>110%</option><option>125%</option></select>
+        <svg data-act="stampa"><title>Stampa</title><use href="#i-pdf"/></svg>
+        <span class="cnt" id="cntScad">Righe: 0</span>
+      </div>
+      <div class="gwrap" id="gScad" tabindex="0"></div>
+    </div>
+  </div>
+</div>
+
+<div class="status"><span id="stVer">EG100A (x64)</span><span class="sep">|</span><span id="stUser">UTENTE</span><span class="sep">|</span><span id="stDitta">WM/99/99</span></div>
+
+<div class="modal-bg" id="modalBg"><div class="modal">
+  <div class="mh"><span id="mTitle">Dettaglio</span><span onclick="closeModal()">✕</span></div>
+  <div class="mb" id="mBody"></div>
+  <div class="mf"><button class="btn" onclick="closeModal()" style="width:80px">Chiudi</button></div>
+</div></div>
+<div class="toast" id="toast"></div>
+
+<script src="/static/comune.js"></script>
+<script>
+/* ---------------- contesto passato dal launcher ---------------- */
+const qs = new URLSearchParams(location.search);
+const CTX = { ditta: qs.get('ditta') || 'WM', ragsoc: qs.get('ragsoc') || 'DITTA DEMO', utente: qs.get('utente') || 'UTENTE' };
+document.getElementById('wintitle').textContent = `Interrogazione scadenzario clienti - Ditta: ${CTX.ragsoc} (${CTX.ditta})`;
+document.getElementById('stUser').textContent = CTX.utente;
+document.getElementById('stDitta').textContent = `${CTX.ditta}/99/99`;
+
+function openModal(title, pairs){
+  document.getElementById('mTitle').textContent = title;
+  document.getElementById('mBody').innerHTML = pairs.map(([k,v])=>`<b>${esc(k)}</b><div>${esc(v)}</div>`).join('');
+  document.getElementById('modalBg').style.display='flex';
+}
+function closeModal(){ document.getElementById('modalBg').style.display='none'; }
+
+// richiesta al backend; null = errore già segnalato
+async function api(path, params, signal){
+  try {
+    const u = new URL(path, location.href);
+    if (params) Object.entries(params).forEach(([k,v]) => { if (v!=='' && v!=null) u.searchParams.set(k,v); });
+    const r = await fetch(u, {signal});
+    if (!r.ok) { const d = await r.json().then(j=>j.detail, ()=>null); throw new Error(typeof d==='string' ? d : `Richiesta non valida (HTTP ${r.status})`); }
+    return await r.json();
+  } catch(e) { if (signal?.aborted) return null; toast(e instanceof TypeError ? 'Backend non raggiungibile' : e.message); return null; }
+}
+
+/* ---------------- griglia ---------------- */
+const imp = v => fmtNum(v);
+const flag = (cls, t, titolo) => `<span class="flag ${cls}" title="${titolo}">${t}</span>`;
+const STATO = {scaduta:'Scaduta', aperta:'Aperta, non scaduta', credito:'Credito del cliente (acconto o nota di credito)', chiusa:'Chiusa'};
+const colonne = [
+  {type:'ind', w:14},
+  {key:'stato', label:'Stato', w:46, cls:'c', render:v=>`<span class="stato ${v}" title="${STATO[v]}"></span>`, fmt:v=>STATO[v]},
+  {key:'segnalazioni', label:'Segnal.', w:62, cls:'c', filter:false,
+    render:(v,r)=>(r.bloccata?flag('b','B','Bloccata'):'')+(r.insoluto?flag('i','I','Insoluto'):'')+(r.inesigibile?flag('n','N','Credito inesigibile'):''),
+    fmt:(v,r)=>[r.bloccata&&'Bloccata', r.insoluto&&'Insoluto', r.inesigibile&&'Inesigibile'].filter(Boolean).join(' ')},
+  {key:'data_scadenza', label:'Data', group:'Scadenza', w:82, cls:'r', fmt:fmtDate},
+  {key:'giorni_scaduto', label:'Gg scad.', group:'Scadenza', w:62, cls:'r', fmt:v=>v?String(v):''},
+  {key:'cod_cliente', label:'Codice', group:'Cliente', w:84, cls:'link'},
+  {key:'cliente', label:'Ragione sociale', group:'Cliente', w:200},
+  {key:'sigla', label:'Sigla', group:'Documento', w:50},
+  {key:'num_doc', label:'Numero', group:'Documento', w:70, cls:'r'},
+  {key:'data_doc', label:'Data', group:'Documento', w:82, cls:'r', fmt:fmtDate},
+  {key:'num_reg', label:'Numero', group:'Registrazione', w:66, cls:'r'},
+  {key:'data_reg', label:'Data', group:'Registrazione', w:82, cls:'r', fmt:fmtDate},
+  {key:'cond_pagamento', label:'Condizione di pagamento', w:190},
+  {key:'tipo_pagamento', label:'Tipo pag.', w:62, cls:'c'},
+  {key:'totale_doc', label:'Totale documento', w:110, cls:'r', fmt:imp},
+  {key:'apertura', label:'Importo', w:100, cls:'r', fmt:imp, somma:true},
+  {key:'incassato', label:'Incassato', w:100, cls:'r', fmt:imp, somma:true},
+  {key:'storno', label:'Stornato / compensato', w:110, cls:'r', fmt:imp, somma:true},
+  {key:'residuo', label:'Residuo', w:100, cls:'r', fmt:imp, somma:true},
+  {key:'rischio_insoluto', label:'Rischio insoluto', w:100, cls:'r', fmt:imp, somma:true},
+  {key:'commessa', label:'Rif. commessa', w:100},
+  {key:'conto', label:'Conto', w:70},
+];
+const griglia = new Grid(document.getElementById('gScad'), colonne, {countEl:document.getElementById('cntScad'), totali:true, onOpen:dettaglio});
+const attesa = new Caricamento(document.getElementById('scadPanel'), 'Caricamento scadenzario…');
+
+/* ---------------- riepilogo ---------------- */
+// scaduto per fasce di giorni, come nella situazione finanziaria clienti
+const FASCE = [[1,30,'fino a 30 gg'],[31,60,'31-60 gg'],[61,90,'61-90 gg'],[91,Infinity,'oltre 90 gg']];
+function riepilogo(righe){
+  const somma = l => l.reduce((s,r) => s + (r.residuo || 0), 0);
+  const scadute = righe.filter(r => r.stato === 'scaduta');
+  const voce = (titolo, valore, cls='') => `<div class="${cls}"><b>${valore}</b><span>${esc(titolo)}</span></div>`;
+  // residuo totale = scaduto + a scadere + acconti e note di credito (negativi)
+  document.getElementById('riepilogo').innerHTML =
+    voce('Scadenze', righe.length) + voce('Clienti', new Set(righe.map(r => r.cod_cliente)).size) +
+    voce('Residuo totale', imp(somma(righe))) + voce('di cui scaduto', imp(somma(scadute)), 'scad') +
+    FASCE.map(([da,a,t]) => voce('scaduto ' + t, imp(somma(scadute.filter(r => r.giorni_scaduto >= da && r.giorni_scaduto <= a))))).join('') +
+    voce('a scadere', imp(somma(righe.filter(r => r.stato === 'aperta')))) +
+    voce('acconti e note di credito', imp(somma(righe.filter(r => r.stato === 'credito')))) +
+    voce('Rischio insoluto', imp(righe.reduce((s,r) => s + (r.rischio_insoluto || 0), 0)));
+}
+
+/* ---------------- caricamento ---------------- */
+const form = document.getElementById('filters');
+const oggi = () => { const t = new Date(); return new Date(Date.UTC(t.getFullYear(), t.getMonth(), t.getDate())).toISOString().slice(0,10); };
+// clienti: dall'indirizzo, quando la pagina è aperta da un ordine
+function predefiniti(){ form.reset(); form.riferimento.value = oggi(); form.clienti.value = qs.get('clienti') || ''; }
+async function carica(){
+  const p = Object.fromEntries(new FormData(form));
+  p.aperte = form.aperte.checked; p.chiuse = form.chiuse.checked;
+  if (!p.aperte && !p.chiuse) { toast('Selezionare le scadenze aperte, quelle chiuse o entrambe'); return false; }
+  const d = await attesa.esegui('/api/scadenzario', p);
+  if (d === undefined) return false;
+  const righe = d?.scadenze || [];
+  griglia.setRows(righe); riepilogo(righe);
+  if (d?.avvisi?.length) toast('Dati non disponibili: ' + d.avvisi.join(', '));
+  return !!d;
+}
+form.onsubmit = e => { e.preventDefault(); carica(); };
+form.aperte.onchange = () => form.tipo_aperte.disabled = !form.aperte.checked;
+document.getElementById('filtToggle').onclick = e => { const v = form.style.display==='none'; form.style.display = v?'':'none'; e.target.textContent = v?'⌃':'⌄'; };
+document.querySelector('.zoom').onchange = e => document.getElementById('gScad').style.setProperty('--fs', (13*parseInt(e.target.value)/100)+'px');
+
+function dettaglio(r){
+  r = r || griglia.current();
+  if (!r) return toast('Selezionare una scadenza');
+  const sn = v => v ? 'Sì' : 'No';
+  openModal(`Scadenza ${r.n_scadenza} - ${r.sigla} ${r.num_doc} del ${fmtDate(r.data_doc)}`, [
+    ['Cliente', `${r.cod_cliente} - ${r.cliente}`], ['Conto', r.conto],
+    ['Data scadenza', fmtDate(r.data_scadenza)], ['Stato', STATO[r.stato] + (r.giorni_scaduto ? `, da ${r.giorni_scaduto} giorni` : '')],
+    ['Documento', `${r.sigla} ${r.num_doc} del ${fmtDate(r.data_doc)}`], ['Registrazione', `${r.num_reg} del ${fmtDate(r.data_reg)} (registro ${r.registro})`],
+    ['Condizione di pagamento', r.cond_pagamento], ['Tipo pagamento', r.tipo_pagamento], ['Banca', r.banca], ['Agente', r.agente], ['Rif. commessa', r.commessa],
+    ['Totale documento', imp(r.totale_doc)], ['Importo scadenza', imp(r.apertura)], ['Incassato', imp(r.incassato)],
+    ['Incassato non contabilizzato', imp(r.incassato_no_cont)], ['Stornato / compensato', imp(r.storno)], ['Crediti inesigibili', imp(r.inesigibili)],
+    ['Residuo', imp(r.residuo)], ['Rischio insoluto', imp(r.rischio_insoluto)],
+    ['Bloccata', sn(r.bloccata)], ['Insoluto', sn(r.insoluto)], ['Sollecito', r.sollecito],
+  ]);
+}
+
+/* ---------------- azioni ---------------- */
+function esporta(){
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + griglia.toCSV()], {type:'text/csv;charset=utf-8'}));
+  a.download = 'scadenzario_clienti.csv'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+function fineMese(){ const t = new Date(); return new Date(Date.UTC(t.getFullYear(), t.getMonth()+1, 0)).toISOString().slice(0,10); }
+const AZIONI = {
+  dettaglio: () => dettaglio(),
+  aggiorna: () => carica().then(ok => ok && toast('Scadenzario aggiornato')),
+  scadute: () => { form.aperte.checked = true; form.tipo_aperte.disabled = false; form.tipo_aperte.value = 'scadute'; form.chiuse.checked = false; carica(); },
+  mese: () => { form.aperte.checked = true; form.tipo_aperte.disabled = false; form.tipo_aperte.value = 'tutte'; form.chiuse.checked = false;
+                form.scad_da.value = oggi().slice(0,8) + '01'; form.scad_a.value = fineMese(); carica(); },
+  ripristina: () => { predefiniti(); form.tipo_aperte.disabled = false; griglia.filters = {}; griglia.sort = null; carica(); },
+  stampa: () => window.print(),
+  esporta,
+};
+document.querySelectorAll('[data-act]').forEach(b => b.addEventListener('click', () => AZIONI[b.dataset.act]()));
+document.addEventListener('keydown', e => {
+  const tasti = {F7:'dettaglio', F11:'aggiorna', F5:'stampa'};
+  if (tasti[e.key]) { e.preventDefault(); AZIONI[tasti[e.key]](); }
+  if (e.key==='Escape') closeModal();
+});
+
+predefiniti();
+carica();
+</script>
+</body>
+</html>
