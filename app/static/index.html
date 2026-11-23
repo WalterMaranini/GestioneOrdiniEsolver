@@ -484,8 +484,12 @@ class Grid {
         return `<td class="${c.cls||''}" title="${esc(this.text(c,r))}">${esc(this.text(c,r))}</td>`;
       }).join('') + '</tr>';
     });
+    // riempi: riga vuota che occupa lo spazio libero (la tabella deve essere alta quanto il contenitore)
+    if (this.opt.riempi) h += `<tr class="riempi"><td colspan="${cols.length}"></td></tr>`;
     h += '</tbody>';
-    if (this.opt.totali) h += `<tfoot><tr>${cols.map((c,i) => `<td>${i===0 ? 'Tot:' : ''}</td>`).join('')}</tr></tfoot>`;
+    // colonne con somma:true: totale delle righe visibili
+    const somma = c => { const t = this.view.reduce((s,r) => s + (Number(r[c.key]) || 0), 0); return esc(c.fmt ? c.fmt(t) : t); };
+    if (this.opt.totali) h += `<tfoot><tr>${cols.map((c,i) => `<td class="${c.somma ? c.cls||'' : ''}">${i===0 ? 'Tot:' : c.somma ? somma(c) : ''}</td>`).join('')}</tr></tfoot>`;
     h += '</table>';
     const ae = document.activeElement, focused = this.el.contains(ae) ? ae.dataset?.f : null, caret = ae?.selectionStart;
     this.el.innerHTML = h;

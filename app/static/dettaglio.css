@@ -78,5 +78,19 @@ body.in-riga #driga{display:flex}
 .d-righe table.grid tfoot td{position:sticky;bottom:0;background:#e7e7e7;border-top:1px solid #b5b5b5;font-weight:700;z-index:1}
 .d-righe table.grid tfoot td:first-child{overflow:visible;z-index:2}
 
+/* dettaglio riga, scheda Analitica: griglia della ripartizione */
+.d-righe.d-ripart{flex:none;height:248px;border-color:#7f9db9}
+.d-ripart .gwrap{background:#d6d6d6}
+/* tabella alta quanto il pannello: lo spazio in più va alla riga di riempimento, così il totale resta in fondo */
+.d-ripart table.grid{height:100%;background:transparent}
+.d-ripart table.grid tbody tr{height:17px}
+.d-ripart table.grid tbody td{background:#fff}
+.d-ripart table.grid tbody tr.riempi{height:100%}
+.d-ripart table.grid tbody tr.riempi td{background:transparent;border:none}
+.d-cols h4.d-tutta{grid-column:1/-1;margin-top:4px}
+.d-gcmd{color:#333;padding:0 6px;border-right:1px solid #c9c9c9}
+.d-gcmd.off{color:#a3a3a3}
+.d-gsp{flex:1}
+
 @media (max-width:900px){ .d-cols{grid-template-columns:minmax(0,1fr)} .d-fin .ribbon{overflow-x:auto} }
 @media print{ body.in-dettaglio .d-fin .menutabs,body.in-dettaglio .d-fin .ribbon,.d-menu{display:none} .d-scheda{overflow:visible} }

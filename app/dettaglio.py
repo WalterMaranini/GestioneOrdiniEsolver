@@ -1,5 +1,5 @@
 """
-Dettaglio del singolo ordine (schede Generali, Condizioni e Logistica) e della singola riga (scheda Generali).
+Dettaglio del singolo ordine (schede Generali, Condizioni e Logistica) e della singola riga (schede Generali e Analitica).
 
 La testata viene da LeggiElenco, che riporta soprattutto codici. Le descrizioni vengono dai report REST di
 sola lettura elencati qui sotto. Ciò che nessun servizio espone resta vuoto: non si ricava per ipotesi.
@@ -16,6 +16,9 @@ from .esolver import DOCVEN, EsolverError, _data, map_riga
 log = logging.getLogger(__name__)
 
 TERRITORIALITA = {0: "Italia", 1: "CEE", 2: "Fuori CEE"}
+# solo i valori riscontrati in eSolver; gli altri si mostrano col codice
+TIPO_RIPARTIZIONE = {0: "Percentuale"}
+STATO_INTEGRAZIONE = {1: "Integrato"}
 
 # righe di un report: (nome, filtri) -> righe
 LeggiReport = Callable[[str, list[dict]], list[dict]]
@@ -246,4 +249,31 @@ def map_dettaglio_riga(raw: dict, r: dict, docven: dict, articolo: dict) -> dict
         },
         "pesi": {"lordo": r.get("PesoLordoUnitario"), "tara": r.get("TaraUnitaria"),
                  "netto": r.get("PesoNetto"), "volume": r.get("Volume")},
+        "analitica": map_analitica(raw, r),
+    }
+
+
+def _enum(tabella: dict, v) -> str:
+    return tabella.get(v, _testo(v)) if v is not None else ""
+
+
+def map_analitica(raw: dict, r: dict) -> dict:
+    """Scheda Analitica della riga: voce, ripartizione sui centri (elenco Industriale) e periodo.
+
+    La descrizione della voce non è esposta da nessun servizio: si mostra il solo codice.
+    """
+    return {
+        "voce": _codice(r.get("DatiIndVoceCdA")),
+        "tipo_ripartizione": _enum(TIPO_RIPARTIZIONE, r.get("DatiIndTipoRipartiz")),
+        "criterio": _codice(r.get("DatiIndCodCritRipCdA")),
+        "valuta": _testo(raw.get("CodValuta")), "importo": r.get("ImportoValuta"),
+        "udm": _testo(r.get("UnitaMisura")), "quantita": r.get("Quantita"),
+        "ripartizione": [{
+            "centro": _testo(x.get("CodCentro")), "commessa": _testo(x.get("CodCommessa")),
+            "sottocommessa": _testo(x.get("CodSottocommessa")),
+            "percentuale": x.get("PercentualeRipartiz"), "importo": x.get("ImportoRipartito"),
+            "quantita": x.get("QtaRipartita"),
+        } for x in r.get("Industriale") or []],
+        "periodo_da": _data(r.get("DatiIndDataPeriodoDa")), "periodo_a": _data(r.get("DatiIndDataPeriodoA")),
+        "stato_integrazione": _enum(STATO_INTEGRAZIONE, r.get("DatiIndStatoIntegraz")),
     }

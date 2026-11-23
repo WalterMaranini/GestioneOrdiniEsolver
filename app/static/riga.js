@@ -37,18 +37,61 @@ window.DettaglioRiga = (() => {
         campo('Peso lordo unitario', quantita(p.lordo), 'num') + campo('Tara unitaria', quantita(p.tara), 'num'),
         campo('Peso netto', quantita(p.netto), 'num') + campo('Volume', quantita(p.volume), 'num'), {chiudibile:true});
     },
+    analitica: d => {
+      const a = d.analitica;
+      // come sezione(), ma il titoletto "Ripartizione" occupa tutta la larghezza
+      return `<section class="d-sez"><h3><span>Assi di analisi</span></h3><div class="d-cols">
+        <div>${campo('Voce', a.voce, 'sel')}</div><div></div><h4 class="d-tutta">Ripartizione</h4>
+        <div>${campo('Tipo ripartizione', a.tipo_ripartizione, 'sel') + campo('Criterio di ripartizione', a.criterio, 'sel')}</div>
+        <div>${campo(`Importo da ripartire ${a.valuta}`.trim(), importo(a.importo), 'num') + campo(`Quantità da ripartire ${a.udm}`.trim(), quantita(a.quantita), 'num')}</div>
+        </div></section>` +
+      `<div class="d-righe d-ripart panel"><div class="gtool"><span class="d-gcmd off">＋ Aggiungi (F4)</span><span class="d-gcmd off">✕ Elimina (F8)</span><span class="d-gsp"></span>
+        <svg data-ana="esporta"><title>Esporta in Excel</title><use href="#i-excel"/></svg>
+        <select data-ana="zoom" aria-label="Zoom">${[80,90,100,110,125].map(z=>`<option ${z===100?'selected':''}>${z}%</option>`).join('')}</select>
+        <span class="cnt">Righe: 0</span></div><div class="gwrap" tabindex="0"></div></div>` +
+      sezione('Altri dati',
+        riga('Periodo da / a', casella(data(a.periodo_da), 'num data') + casella(data(a.periodo_a), 'num data')),
+        campo('Stato integrazione', a.stato_integrazione, 'sel'));
+    },
   };
+  // griglia della ripartizione: si crea dopo aver scritto la scheda
+  const n4 = v => num(v, 4);
+  const colonneRipartizione = a => [
+    {type:'ind', w:18},
+    {key:'centro', label:'Centro di analisi', w:198},
+    {key:'commessa', label:'Commessa', w:127},
+    {key:'sottocommessa', label:'Sottocommessa', w:119},
+    {key:'percentuale', label:'Percentuale di ripartizione', w:95, cls:'r', fmt:n4, somma:true},
+    {key:'importo', label:`Importo ${a.valuta}`.trim(), w:127, cls:'r', fmt:n4, somma:true},
+    {key:'quantita', label:`Quantità ${a.udm}`.trim(), w:127, cls:'r', fmt:n4, somma:true},
+  ];
+  let grigliaRipartizione = null;
+  const DOPO = {
+    analitica: (el, d) => {
+      const p = el.querySelector('.d-ripart'), gwrap = p.querySelector('.gwrap');
+      grigliaRipartizione = new Grid(gwrap, colonneRipartizione(d.analitica), {countEl:p.querySelector('.cnt'), filtri:false, totali:true, riempi:true});
+      grigliaRipartizione.setRows(d.analitica.ripartizione);
+      p.querySelector('select').onchange = e => gwrap.style.setProperty('--fs', 12*parseInt(e.target.value)/100 + 'px');
+    },
+  };
+  function esportaRipartizione(){
+    const l = document.createElement('a'); l.href = URL.createObjectURL(new Blob(['﻿' + grigliaRipartizione.toCSV()], {type:'text/csv;charset=utf-8'}));
+    l.download = `riga_${dati?.n ?? ''}_analitica.csv`; l.click(); setTimeout(() => URL.revokeObjectURL(l.href), 1000);
+  }
   const MENU = [['generali','Generali'],['estesa','Descrizione estesa'],['contabili','Contabili'],['analitica','Analitica'],['agenti','Agenti'],['note','Note e allegati']];
   const RIBBON = {
     azioni: gruppo('Navigazione', grande('d-esci','Abbandona<br>(F1)','abbandona')) +
       gruppo('Altre funzioni', grande('i-flow','Dati<br>FTE (F)','Dati FTE') + grande('i-chart','Scorpora<br>prezzo (S)') +
         grande('i-archive','Assegna<br>lotto minimo') + grande('d-lente','Controllo<br>giacenza ▾','Controllo giacenza')),
+    analitica: gruppo('Gestione', grande('d-elimina','Azzera<br>parametri')),
     help: '<div class="d-nd">Voci non ancora disponibili</div>',
   };
+  // linguette che compaiono tra AZIONI e HELP nelle varie schede
+  const CONTESTO = {analitica:['analitica']};
 
   const root = document.getElementById('driga');
   root.classList.add('d-fin');
-  root.innerHTML = `<div class="menutabs"><div class="tab" data-tab="azioni">AZIONI</div><div class="tab" data-tab="help">HELP</div><input class="search" placeholder="cerca nel manuale..."><div class="collapse">▲</div></div>
+  root.innerHTML = `<div class="menutabs"><div class="tab" data-tab="azioni">AZIONI</div><span class="d-ctx"></span><div class="tab" data-tab="help">HELP</div><input class="search" placeholder="cerca nel manuale..."><div class="collapse">▲</div></div>
   <div class="ribbon"></div><div class="d-titolo"></div><div class="d-sotto"></div>
   <div class="d-corpo"><nav class="d-menu">${menuHtml(MENU)}</nav><div class="d-scheda"></div></div>`;
   const $ = s => root.querySelector(s);
@@ -57,13 +100,19 @@ window.DettaglioRiga = (() => {
   let dati = null, scheda = 'generali', titoloPrima = '', allaChiusura = null;
 
   function mostraRibbon(nome){
+    const linguette = CONTESTO[scheda] || [];
+    $('.menutabs').classList.toggle('ctx', linguette.length > 0);
+    $('.d-ctx').innerHTML = linguette.map(k => `<div class="tab contesto" data-tab="${k}">${k.toUpperCase()}</div>`).join('');
     root.querySelectorAll('[data-tab]').forEach(t => t.classList.toggle('sel', t.dataset.tab===nome));
     $('.ribbon').innerHTML = RIBBON[nome];
   }
   function mostraScheda(k){
     scheda = k; marcaMenu(root, k);
+    mostraRibbon(CONTESTO[k] ? k : 'azioni');
+    grigliaRipartizione = null;
     const el = $('.d-scheda'); el.scrollTop = 0;
     el.innerHTML = !dati ? '' : SCHEDE[k] ? SCHEDE[k](dati) : `<div class="d-vuota">Scheda "${esc(MENU.find(m=>m[0]===k)[1])}" non ancora disponibile.</div>`;
+    if (dati && DOPO[k]) DOPO[k](el, dati);
   }
   function titoli(r){
     $('.d-titolo').textContent = `Tipo riga: ${[r.tipo_riga, r.des_tipo].filter(x => x!=null && x!=='').join(' - ')}`;
@@ -95,6 +144,7 @@ window.DettaglioRiga = (() => {
   root.addEventListener('click', e => {
     const s = e.target.closest('[data-scheda]'); if (s) return mostraScheda(s.dataset.scheda);
     const t = e.target.closest('[data-tab]'); if (t) return mostraRibbon(t.dataset.tab);
+    if (e.target.closest('svg[data-ana="esporta"]')) return esportaRipartizione();
     const c = e.target.closest('[data-chiudi]'); if (c) { c.textContent = c.closest('.d-sez').classList.toggle('chiusa') ? '⌄' : '⌃'; return; }
     const f = e.target.closest('[data-fare]'); if (!f) return;
     if (f.dataset.fare==='abbandona') chiudi(); else toast(`"${f.dataset.fare}": da collegare al servizio ERP`);
